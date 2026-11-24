@@ -5,6 +5,7 @@ Strictly used for semantic retrieval in RAG (NO ML classification).
 """
 
 import logging
+from threading import Lock
 from typing import List
 import numpy as np
 from backend.core.config import settings
@@ -17,18 +18,21 @@ class EmbeddingService:
         self.model_name = model_name or settings.EMBEDDING_MODEL
         self._model = None
         self._initialized = False
+        self._init_lock = Lock()
 
     def _lazy_init(self):
-        if not self._initialized:
+        if self._initialized:
+            return
+        with self._init_lock:
+            if self._initialized:
+                return
             try:
                 from fastembed import TextEmbedding
                 self._model = TextEmbedding(model_name=self.model_name)
-                self._initialized = True
-                logger.info(f"FastEmbed embedding model initialized: {self.model_name}")
-            except Exception as e:
-                logger.warning(f"FastEmbed initialization failed: {e}. Fallback vector mode enabled.")
-                self._initialized = True
-                self._model = None
+                logger.info("FastEmbed embedding model initialized: %s", self.model_name)
+            except Exception as exc:
+                logger.warning("FastEmbed initialization failed: %s. Fallback vector mode enabled.", exc)
+            self._initialized = True
 
     def embed_text(self, text: str) -> List[float]:
         """Generate embedding vector for a single string"""

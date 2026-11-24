@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/v1/history", tags=["Verification History"])
     response_model=HistoryList,
     summary="Get paginated verification history for authenticated user"
 )
-async def list_verification_history(
+def list_verification_history(
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=10, ge=1, le=50, description="Items per page"),
     verdict: Optional[str] = Query(default=None, description="Optional verdict filter: REAL, FALSE, MISLEADING, UNVERIFIED"),
@@ -41,7 +41,7 @@ async def list_verification_history(
     response_model=HistoryDetail,
     summary="Get full evidence verification report for a past run"
 )
-async def get_history_detail(
+def get_history_detail(
     history_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -65,7 +65,7 @@ async def get_history_detail(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a single verification history record"
 )
-async def delete_history_item(
+def delete_history_item(
     history_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -88,7 +88,7 @@ async def delete_history_item(
     "",
     summary="Clear all verification history for current user"
 )
-async def clear_all_history(
+def clear_all_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     history_service: HistoryService = Depends(get_history_service)

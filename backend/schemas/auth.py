@@ -12,9 +12,14 @@ EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
 
 class UserRegister(BaseModel):
-    email: str = Field(description="Valid email address")
-    password: str = Field(min_length=6, description="Password must be at least 6 characters")
+    email: str = Field(max_length=254, description="Valid email address")
+    password: str = Field(min_length=6, max_length=1024, description="Password must be at least 6 characters")
     full_name: str = Field(min_length=2, max_length=100, description="Full name of user")
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def strip_full_name(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("email")
     @classmethod
@@ -27,7 +32,7 @@ class UserRegister(BaseModel):
 
 class UserLogin(BaseModel):
     email: str
-    password: str
+    password: str = Field(max_length=1024)
 
     @field_validator("email")
     @classmethod
@@ -37,8 +42,8 @@ class UserLogin(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(default=None, min_length=2, max_length=100)
-    current_password: Optional[str] = None
-    new_password: Optional[str] = Field(default=None, min_length=6)
+    current_password: Optional[str] = Field(default=None, max_length=1024)
+    new_password: Optional[str] = Field(default=None, min_length=6, max_length=1024)
 
 
 class UserOut(BaseModel):

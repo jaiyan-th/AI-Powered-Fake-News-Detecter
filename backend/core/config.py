@@ -2,6 +2,7 @@
 Application Configuration using Pydantic Settings
 """
 
+from secrets import token_urlsafe
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
@@ -45,7 +46,7 @@ class Settings(BaseSettings):
     EVIDENCE_FRESHNESS_DAYS: int = 60  # Prioritize within this window for breaking news
 
     # Authentication & Security
-    JWT_SECRET_KEY: str = Field(default="dev-jwt-secret-key-replace-in-production-abcdef1234567890", description="HMAC Secret Key for JWT")
+    JWT_SECRET_KEY: str = Field(default_factory=lambda: token_urlsafe(48), description="HMAC secret key for JWT")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days session
 

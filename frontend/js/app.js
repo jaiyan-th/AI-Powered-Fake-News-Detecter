@@ -1,359 +1,374 @@
-/**
- * VerifyNews Engine — Live Client
- * Text Analysis & URL Analysis Alone
- * Zero mock data — 100% Live Backend
- */
+'use strict';
 
-let activeMode = 'text';
-let lastResult = null;
+const byId = (id) => document.getElementById(id);
+const textInput = byId('claim-text');
+const urlInput = byId('claim-url');
+const accountDialog = byId('account-dialog');
+const historyDialog = byId('history-dialog');
+const verdictLabels = { REAL: 'Supported', FALSE: 'False', MISLEADING: 'Misleading', UNVERIFIED: 'Unverified' };
+const stanceLabels = { SUPPORT: 'Supports claim', CONTRADICT: 'Contradicts claim', NEUTRAL: 'Provides context' };
+const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+let mode = 'text';
+let report;
+let token = sessionStorage.getItem('verifynews-token');
+let user;
+let accountMode;
+let historyPage = 1;
+let historyRequest = 0;
+let noticeTimer;
 
-document.addEventListener('DOMContentLoaded', () => {
-    updateCharCounter();
-});
-
-// ── Mode Switch ─────────────────────────────────────────────────
-
-function switchMode(mode) {
-    activeMode = mode;
-    const tabText = document.getElementById('tabText');
-    const tabUrl = document.getElementById('tabUrl');
-    const panelText = document.getElementById('panelText');
-    const panelUrl = document.getElementById('panelUrl');
-
-    if (mode === 'url') {
-        tabUrl.classList.add('active');
-        tabText.classList.remove('active');
-        panelUrl.classList.remove('hidden');
-        panelText.classList.add('hidden');
-        document.getElementById('inputUrl').focus();
-    } else {
-        tabText.classList.add('active');
-        tabUrl.classList.remove('active');
-        panelText.classList.remove('hidden');
-        panelUrl.classList.add('hidden');
-        document.getElementById('inputText').focus();
-    }
+function element(tag, value, className) {
+    const node = document.createElement(tag);
+    node.textContent = value;
+    if (className) node.className = className;
+    return node;
 }
 
-function updateCharCounter() {
-    const textEl = document.getElementById('inputText');
-    const counterEl = document.getElementById('charCounter');
-    if (textEl && counterEl) {
-        counterEl.textContent = `${textEl.value.length} / 500 characters`;
-    }
+function message(id, value = '') {
+    const node = byId(id);
+    node.textContent = value;
+    node.hidden = !value;
 }
 
-function clearActiveInput() {
-    if (activeMode === 'url') {
-        const u = document.getElementById('inputUrl');
-        if (u) { u.value = ''; u.focus(); }
-    } else {
-        const t = document.getElementById('inputText');
-        if (t) { t.value = ''; t.focus(); updateCharCounter(); }
-    }
-    showToast('Input cleared');
+function notify(value) {
+    clearTimeout(noticeTimer);
+    message('notice', value);
+    noticeTimer = setTimeout(() => message('notice'), 3200);
 }
 
-async function pasteFromClipboard() {
+function setSession(accessToken, profile) {
+    token = accessToken;
+    user = profile;
+    if (token) sessionStorage.setItem('verifynews-token', token);
+    else sessionStorage.removeItem('verifynews-token');
+    byId('account-button').textContent = user ? 'Account' : 'Sign in';
+}
+
+async function api(path, { method = 'GET', body, authenticated = true } = {}) {
+    const requestToken = authenticated ? token : null;
+    const headers = {};
+    if (requestToken) headers.Authorization = 'Bearer ' + requestToken;
+    if (body) headers['Content-Type'] = 'application/json';
+    const response = await fetch('/api/v1' + path, { method, headers, body: body && JSON.stringify(body) });
+    if (response.status === 204) return;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        if (response.status === 401 && requestToken && token === requestToken) setSession(null, null);
+        const detail = Array.isArray(data.detail) ? data.detail[0]?.msg : data.detail;
+        throw new Error(data.message || detail || 'Request failed. Please try again.');
+    }
+    return data;
+}
+
+function selectMode(value) {
+    mode = value;
+    const isText = mode === 'text';
+    byId('mode-text').setAttribute('aria-pressed', isText);
+    byId('mode-url').setAttribute('aria-pressed', !isText);
+    byId('text-field').hidden = !isText;
+    byId('url-field').hidden = isText;
+    message('verify-error');
+    (isText ? textInput : urlInput).focus();
+}
+
+function updateCount() {
+    byId('text-count').textContent = textInput.value.length.toLocaleString() + ' / ' + textInput.maxLength.toLocaleString() + ' characters';
+}
+
+function publicWebUrl(value) {
     try {
-        const text = await navigator.clipboard.readText();
-        if (text) {
-            if (activeMode === 'url') {
-                document.getElementById('inputUrl').value = text;
-            } else {
-                document.getElementById('inputText').value = text;
-                updateCharCounter();
-            }
-            showToast('Pasted from clipboard');
-        }
+        const url = new URL(value);
+        if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return url.href;
     } catch {
-        showToast('Please press Ctrl+V to paste');
+        return null;
     }
+    return null;
 }
 
-// ── Run Analysis ────────────────────────────────────────────────
-
-async function runAnalysis() {
-    let payload = {};
-
-    if (activeMode === 'url') {
-        const url = document.getElementById('inputUrl').value.trim();
-        if (!url) {
-            showToast('Please enter an article URL');
-            document.getElementById('inputUrl').focus();
-            return;
-        }
-        payload = { url };
-    } else {
-        const text = document.getElementById('inputText').value.trim();
-        if (!text || text.length < 15) {
-            showToast('Please enter at least 15 characters of news text');
-            document.getElementById('inputText').focus();
-            return;
-        }
-        payload = { text };
-    }
-
-    const btn = document.getElementById('verifyBtn');
-    const ctaText = document.getElementById('ctaBtnText');
-    const ctaIcon = document.getElementById('ctaBtnIcon');
-    const radar = document.getElementById('loadingRadar');
-    const results = document.getElementById('resultsSection');
-    const sources = document.getElementById('sourcesSection');
-
-    // UI loading state
-    btn.disabled = true;
-    ctaText.textContent = 'Analyzing…';
-    ctaIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-
-    radar.classList.remove('hidden');
-    results.classList.add('hidden');
-    sources.classList.add('hidden');
-
-    resetSteps();
-    animateSteps();
-
-    try {
-        const res = await fetch('/api/v1/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.message || errData.detail || 'Verification request failed');
-        }
-
-        const data = await res.json();
-        lastResult = data;
-
-        // Render real data
-        renderResults(data);
-
-        // Show results
-        results.classList.remove('hidden');
-        sources.classList.remove('hidden');
-        results.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        showToast('Analysis complete');
-
-    } catch (err) {
-        showToast(`Error: ${err.message}`);
-    } finally {
-        btn.disabled = false;
-        ctaText.textContent = 'Verify Claim';
-        ctaIcon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
-        radar.classList.add('hidden');
-    }
+function formatDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : dateFormat.format(date);
 }
 
-// ── Progress Steps Animation ────────────────────────────────────
-
-function resetSteps() {
-    for (let i = 1; i <= 6; i++) {
-        const el = document.getElementById(`step-${i}`);
-        if (el) el.classList.remove('done');
-    }
+function badge(kind, label) {
+    const node = element('span', label, 'badge');
+    node.dataset.kind = kind;
+    return node;
 }
 
-function animateSteps() {
-    for (let i = 1; i <= 6; i++) {
-        const el = document.getElementById(`step-${i}`);
-        if (el) {
-            setTimeout(() => {
-                el.classList.add('done');
-            }, i * 350);
-        }
-    }
+function renderReport(data) {
+    report = data;
+    const verdict = byId('verdict');
+    verdict.dataset.kind = data.verdict;
+    verdict.textContent = verdictLabels[data.verdict] || data.verdict;
+    byId('confidence').textContent = data.confidence + '% verification confidence';
+    byId('report-claim').textContent = data.claim.primary_claim;
+    message('entities', data.claim.entities?.length ? 'Mentioned: ' + data.claim.entities.join(', ') : '');
+    byId('explanation').textContent = data.explanation || data.summary;
+    const evidence = data.evidence_summary;
+    byId('evidence-counts').replaceChildren(
+        element('li', evidence.supporting + ' supporting'),
+        element('li', evidence.contradicting + ' contradicting'),
+        element('li', evidence.neutral + ' for context')
+    );
+    byId('limitations').hidden = !data.limitations?.length;
+    byId('limitations').open = false;
+    byId('limitations-list').replaceChildren(...(data.limitations || []).map((item) => element('li', item)));
+    byId('source-count').textContent = data.sources.length + (data.sources.length === 1 ? ' source' : ' sources');
+    byId('source-list').replaceChildren(...data.sources.map(renderSource));
+    if (!data.sources.length) byId('source-list').append(element('p', 'No matching sources were found.', 'muted'));
+    byId('report').hidden = false;
+    byId('report-heading').focus();
 }
 
-// ── Render Live Results ─────────────────────────────────────────
-
-function renderResults(data) {
-    const verdict = (data.verdict || 'UNVERIFIED').toUpperCase();
-    const conf = data.confidence || 0;
-
-    // Banner
-    const banner = document.getElementById('verdictBanner');
-    const vbTitle = document.getElementById('vbTitle');
-    const vbDesc = document.getElementById('vbDesc');
-    const vbIcon = document.getElementById('vbIcon');
-
-    let vClass = 'unverified';
-    let titleText = 'UNVERIFIED CLAIM';
-    let descText = 'Insufficient authoritative reporting found across newsroom indexes';
-
-    if (verdict === 'REAL') {
-        vClass = 'real';
-        titleText = 'VERIFIED — REAL';
-        descText = `Corroborated by ${data.sources?.length || 0} live newsroom reports`;
-        vbIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
-    } else if (verdict === 'FALSE') {
-        vClass = 'false';
-        titleText = 'DEBUNKED — FALSE';
-        descText = 'Directly disproved by authoritative reporting and statements';
-        vbIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-    } else if (verdict === 'MISLEADING') {
-        vClass = 'misleading';
-        titleText = 'MISLEADING / PARTIALLY TRUE';
-        descText = 'Claim contains distorted, inaccurate, or missing context';
-        vbIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
-    } else {
-        vbIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+function renderSource(source) {
+    const card = element('article', '', 'card source');
+    const attribution = [source.source_name || source.domain, formatDate(source.published_at)].filter(Boolean);
+    card.append(
+        badge(source.stance, stanceLabels[source.stance] || 'Provides context'),
+        element('h3', source.title || 'Source article'),
+        element('p', attribution.join(' · ')),
+        element('p', source.evidence_snippet)
+    );
+    const url = publicWebUrl(source.url);
+    if (url) {
+        const link = element('a', 'Read source ↗');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        card.append(link);
     }
-
-    banner.className = `verdict-banner ${vClass}`;
-    vbTitle.textContent = titleText;
-    vbDesc.textContent = descText;
-
-    // Confidence Dial
-    document.getElementById('gaugeVal').textContent = `${conf}%`;
-    const gaugeBar = document.getElementById('gaugeBar');
-    const circumference = 345.5;
-    const offset = circumference - (circumference * conf / 100);
-    gaugeBar.style.strokeDashoffset = offset;
-
-    if (verdict === 'REAL') gaugeBar.style.stroke = '#059669';
-    else if (verdict === 'FALSE') gaugeBar.style.stroke = '#dc2626';
-    else if (verdict === 'MISLEADING') gaugeBar.style.stroke = '#d97706';
-    else gaugeBar.style.stroke = '#64748b';
-
-    // Extracted Claim
-    const claim = data.claim?.primary_claim || (activeMode === 'url' ? document.getElementById('inputUrl').value : document.getElementById('inputText').value);
-    document.getElementById('claimHeadline').textContent = `"${claim}"`;
-
-    // Entities
-    const entitySection = document.getElementById('entitySection');
-    const entityRow = document.getElementById('entityPillsRow');
-    entityRow.innerHTML = '';
-    const entities = data.claim?.entities || [];
-
-    if (entities.length > 0) {
-        entitySection.classList.remove('hidden');
-        entities.forEach(ent => {
-            const span = document.createElement('span');
-            span.className = 'entity-badge org';
-            span.textContent = ent;
-            entityRow.appendChild(span);
-        });
-    } else {
-        entitySection.classList.add('hidden');
-    }
-
-    // Synthesis
-    document.getElementById('synthesisText').textContent = data.explanation || 'No detailed analysis returned.';
-
-    // Breakdown
-    const ev = data.evidence_summary || { supporting: 0, neutral: 0, contradicting: 0 };
-    const total = (ev.supporting + ev.neutral + ev.contradicting) || 1;
-    const sp = Math.round((ev.supporting / total) * 100);
-    const cp = Math.round((ev.contradicting / total) * 100);
-    const np = 100 - sp - cp;
-
-    document.getElementById('bdSegSupport').style.width = `${sp}%`;
-    document.getElementById('bdSegNeutral').style.width = `${np}%`;
-    document.getElementById('bdSegContra').style.width = `${cp}%`;
-
-    document.getElementById('cntSupport').textContent = `${ev.supporting} (${sp}%)`;
-    document.getElementById('cntNeutral').textContent = `${ev.neutral} (${np}%)`;
-    document.getElementById('cntContra').textContent = `${ev.contradicting} (${cp}%)`;
-    document.getElementById('bdParsedCount').textContent = `${data.sources?.length || 0} Sources Evaluated`;
-
-    // Evidence Sources Grid
-    renderSources(data.sources || []);
+    return card;
 }
 
-function renderSources(sources) {
-    const list = document.getElementById('sourcesList');
-    list.innerHTML = '';
-
-    if (!sources || sources.length === 0) {
-        list.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 32px 20px; background: #ffffff; border: 1px dashed var(--b); border-radius: 12px; color: var(--t3);">
-                No matching newsroom articles were indexed for this specific query.
-            </div>
-        `;
+async function verify(event) {
+    event.preventDefault();
+    const button = byId('verify-button');
+    if (button.disabled) return;
+    const input = mode === 'text' ? textInput : urlInput;
+    const value = input.value.trim();
+    const invalid = mode === 'text' ? !value : !publicWebUrl(value);
+    if (invalid) {
+        message('verify-error', mode === 'text' ? 'Enter a claim to verify.' : 'Enter a valid HTTP or HTTPS article URL.');
+        input.focus();
         return;
     }
+    message('verify-error');
+    button.disabled = true;
+    byId('progress').hidden = false;
+    try {
+        renderReport(await api('/verify', { method: 'POST', body: { [mode]: value } }));
+    } catch (error) {
+        message('verify-error', error.message);
+    } finally {
+        button.disabled = false;
+        byId('progress').hidden = true;
+    }
+}
 
-    sources.forEach(src => {
-        const card = document.createElement('div');
-        card.className = 'wire-card';
+function openAccount(value) {
+    accountMode = value;
+    const profile = value === 'profile';
+    const register = value === 'register';
+    const heading = profile ? 'Your account' : register ? 'Create account' : 'Sign in';
+    const form = byId('account-form');
+    form.reset();
+    message('account-error');
+    byId('account-heading').textContent = heading;
+    byId('name-field').hidden = !profile && !register;
+    byId('name').required = profile || register;
+    byId('name').value = profile ? user.full_name : '';
+    byId('email').readOnly = profile;
+    byId('email').value = profile ? user.email : '';
+    byId('password').required = !profile;
+    byId('password').minLength = register ? 6 : 0;
+    byId('password').autocomplete = register ? 'new-password' : 'current-password';
+    byId('password-label').textContent = profile ? 'Current password (for password changes)' : 'Password';
+    byId('new-password-field').hidden = !profile;
+    byId('account-submit').textContent = profile ? 'Save changes' : heading;
+    byId('account-switch').textContent = profile ? 'Sign out' : register ? 'Sign in' : 'Create account';
+    if (!accountDialog.open) accountDialog.showModal();
+}
 
-        let stanceClass = 'neutral';
-        let stanceBadge = 'Neutral Context';
-        if (src.stance === 'SUPPORT') {
-            stanceClass = 'support';
-            stanceBadge = 'Supports Claim';
-        } else if (src.stance === 'CONTRADICT') {
-            stanceClass = 'contra';
-            stanceBadge = 'Contradicts Claim';
+async function submitAccount(event) {
+    event.preventDefault();
+    const button = byId('account-submit');
+    if (button.disabled) return;
+    message('account-error');
+    button.disabled = true;
+    byId('account-switch').disabled = true;
+    try {
+        const password = byId('password').value;
+        const fullName = byId('name').value.trim();
+        if (accountMode === 'profile') {
+            const body = { full_name: fullName };
+            const newPassword = byId('new-password').value;
+            if (newPassword) Object.assign(body, { current_password: password, new_password: newPassword });
+            setSession(token, await api('/auth/me', { method: 'PUT', body }));
+            notify('Account updated.');
+        } else {
+            const body = { email: byId('email').value.trim(), password };
+            if (accountMode === 'register') body.full_name = fullName;
+            const data = await api('/auth/' + accountMode, { method: 'POST', body, authenticated: false });
+            setSession(data.access_token, data.user);
+            notify('Signed in.');
         }
+        accountDialog.close();
+    } catch (error) {
+        message('account-error', error.message);
+    } finally {
+        button.disabled = false;
+        byId('account-switch').disabled = false;
+    }
+}
 
-        const dateStr = src.published_at ? new Date(src.published_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent';
+async function loadHistory(page) {
+    const request = ++historyRequest;
+    const list = byId('history-list');
+    list.replaceChildren();
+    byId('pagination').hidden = true;
+    byId('clear-history').disabled = true;
+    message('history-status', 'Loading history…');
+    try {
+        const query = new URLSearchParams({ page, verdict: byId('history-filter').value });
+        const data = await api('/history?' + query);
+        if (request !== historyRequest || !historyDialog.open) return;
+        if (page > Math.max(data.total_pages, 1)) {
+            await loadHistory(Math.max(data.total_pages, 1));
+            return;
+        }
+        historyPage = page;
+        message('history-status', data.items.length ? '' : 'No saved reports match this view.');
+        list.replaceChildren(...data.items.map(renderHistoryItem));
+        byId('pagination').hidden = data.total_pages <= 1;
+        byId('previous-page').disabled = page <= 1;
+        byId('next-page').disabled = page >= data.total_pages;
+        byId('history-page').textContent = 'Page ' + page + ' of ' + data.total_pages;
+        byId('clear-history').disabled = data.total === 0 && !byId('history-filter').value;
+    } catch (error) {
+        if (request === historyRequest) message('history-status', error.message);
+    }
+}
 
-        card.innerHTML = `
-            <div>
-                <div class="wc-top">
-                    <div>
-                        <div class="wc-outlet-name">${esc(src.source_name || 'News Source')}</div>
-                        <div class="wc-bureau">${esc(src.domain || '')}</div>
-                    </div>
-                    <span class="wc-badge ${stanceClass}">${stanceBadge}</span>
-                </div>
-                <div class="wc-quote">"${esc(src.evidence_snippet || src.title)}"</div>
-            </div>
-            <div class="wc-bottom">
-                <span class="wc-time">${dateStr}</span>
-                <a href="${esc(src.url)}" target="_blank" rel="noopener" class="wc-link">
-                    Read Article ↗
-                </a>
-            </div>
-        `;
-        list.appendChild(card);
+function renderHistoryItem(item) {
+    const row = document.createElement('li');
+    const open = element('button', item.primary_claim, 'quiet history-item');
+    open.append(element('small', [verdictLabels[item.verdict], formatDate(item.created_at)].filter(Boolean).join(' · ')));
+    open.addEventListener('click', async () => {
+        open.disabled = true;
+        try {
+            const saved = await api('/history/' + item.id);
+            if (historyDialog.open) {
+                historyDialog.close();
+                renderReport(saved);
+            }
+        } catch (error) {
+            message('history-status', error.message);
+        } finally {
+            open.disabled = false;
+        }
     });
+    const remove = element('button', 'Delete', 'quiet danger');
+    remove.setAttribute('aria-label', 'Delete report for ' + item.primary_claim);
+    remove.addEventListener('click', () => deleteHistory('/' + item.id, 'Delete this saved report?', remove));
+    row.append(open, remove);
+    return row;
 }
 
-// ── Copy Report & Toast ─────────────────────────────────────────
-
-function copyReport() {
-    if (!lastResult) return;
-    const d = lastResult;
-    const text = `VERIFYNEWS FACT-CHECK REPORT
-Verdict: ${d.verdict} (${d.confidence}% Confidence)
-Claim: "${d.claim?.primary_claim || ''}"
-Analysis: ${d.explanation || ''}
-Source Agreement: ${d.source_agreement_percentage || 0}%
-Sources Evaluated: ${d.sources?.length || 0}`;
-
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('Report copied to clipboard');
-    }).catch(() => {
-        showToast('Copied');
-    });
+async function deleteHistory(path, prompt, button) {
+    if (!window.confirm(prompt)) return;
+    button.disabled = true;
+    try {
+        await api('/history' + path, { method: 'DELETE' });
+        if (historyDialog.open) await loadHistory(path ? historyPage : 1);
+    } catch (error) {
+        message('history-status', error.message);
+        button.disabled = false;
+    }
 }
 
-let toastTimer = null;
-function showToast(msg) {
-    const el = document.getElementById('toastMsg');
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
-}
-
-function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-}
-
-function toggleHistoryDrawer() {
-    showToast('History drawer: 0 items');
-}
-
-function openAuthModal(tab) {
-    showToast('Authentication service online');
+byId('mode-text').onclick = () => selectMode('text');
+byId('mode-url').onclick = () => selectMode('url');
+textInput.oninput = updateCount;
+byId('verify-form').onsubmit = verify;
+byId('clear').onclick = () => {
+    const input = mode === 'text' ? textInput : urlInput;
+    input.value = '';
+    input.focus();
+    updateCount();
+    message('verify-error');
+};
+byId('paste').onclick = async () => {
+    const input = mode === 'text' ? textInput : urlInput;
+    try {
+        const pasted = await navigator.clipboard.readText();
+        if (pasted.length > input.maxLength) {
+            message('verify-error', 'The pasted content exceeds the character limit.');
+            return;
+        }
+        input.value = pasted;
+        updateCount();
+        message('verify-error');
+    } catch {
+        message('verify-error', 'Clipboard access is unavailable. Paste directly into the field.');
+    } finally {
+        input.focus();
+    }
+};
+byId('copy-report').onclick = async () => {
+    if (!report) return;
+    const lines = [
+        'VerifyNews — ' + verdictLabels[report.verdict] + ' (' + report.confidence + '% verification confidence)',
+        report.claim.primary_claim, report.explanation,
+        ...(report.limitations || []),
+        ...report.sources.map((source) => [source.title, publicWebUrl(source.url)].filter(Boolean).join(' — '))
+    ];
+    try {
+        await navigator.clipboard.writeText(lines.join('\n\n'));
+        notify('Report copied.');
+    } catch {
+        notify('Clipboard access is unavailable.');
+    }
+};
+byId('print-report').onclick = () => window.print();
+byId('account-button').onclick = () => openAccount(user ? 'profile' : 'login');
+byId('account-form').onsubmit = submitAccount;
+byId('account-switch').onclick = () => {
+    if (accountMode === 'profile') {
+        setSession(null, null);
+        accountDialog.close();
+        notify('Signed out.');
+    } else {
+        openAccount(accountMode === 'login' ? 'register' : 'login');
+    }
+};
+byId('history-button').onclick = () => {
+    if (!user) {
+        openAccount('login');
+        message('account-error', 'Sign in to view your saved reports.');
+        return;
+    }
+    historyDialog.showModal();
+    loadHistory(1);
+};
+byId('history-filter').onchange = () => loadHistory(1);
+byId('previous-page').onclick = () => loadHistory(historyPage - 1);
+byId('next-page').onclick = () => loadHistory(historyPage + 1);
+byId('clear-history').onclick = () => deleteHistory('', 'Delete all your saved reports?', byId('clear-history'));
+document.querySelectorAll('[data-close]').forEach((button) => {
+    button.onclick = () => byId(button.dataset.close).close();
+});
+accountDialog.addEventListener('cancel', (event) => {
+    if (byId('account-submit').disabled) event.preventDefault();
+});
+accountDialog.addEventListener('close', () => byId('account-form').reset());
+document.querySelector('[data-close="account-dialog"]').addEventListener('click', (event) => {
+    if (byId('account-submit').disabled) event.stopImmediatePropagation();
+}, true);
+if (token) {
+    const savedToken = token;
+    api('/auth/me').then((profile) => {
+        if (token === savedToken) setSession(savedToken, profile);
+    }).catch(() => {});
 }

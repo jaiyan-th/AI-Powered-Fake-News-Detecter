@@ -54,3 +54,17 @@ def test_wire_syndication_deduplication():
     result = normalizer.normalize_and_deduplicate(raw_articles)
     assert len(result) == 1
     assert result[0]["source_name"] == "Reuters"
+
+
+def test_submitted_article_is_excluded_from_evidence():
+    normalizer = SourceNormalizer(SourceCredibilityService())
+    article = {
+        "url": "https://www.reuters.com/news/Story?utm_source=feed",
+        "title": "Published headline",
+        "content": "An article with sufficient content for normalization.",
+    }
+    independent = {**article, "url": "https://apnews.com/news/other", "title": "Independent headline"}
+    results = normalizer.normalize_and_deduplicate(
+        [article, independent], excluded_urls=("http://reuters.com/news/Story",)
+    )
+    assert [item["url"] for item in results] == [independent["url"]]

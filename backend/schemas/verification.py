@@ -4,7 +4,7 @@ Pydantic Schemas for Verification Request and Response
 
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field, model_validator, HttpUrl
+from pydantic import BaseModel, Field, model_validator, HttpUrl, TypeAdapter, field_validator
 
 
 class VerdictEnum(str, Enum):
@@ -21,8 +21,13 @@ class StanceEnum(str, Enum):
 
 
 class VerificationRequest(BaseModel):
-    url: Optional[str] = Field(default=None, description="Direct URL of the news article to verify")
-    text: Optional[str] = Field(default=None, description="Pasted news claim or article content")
+    url: Optional[str] = Field(default=None, max_length=2048, description="Direct URL of the news article to verify")
+    text: Optional[str] = Field(default=None, max_length=12000, description="Pasted news claim or article content")
+
+    @field_validator("url", "text", mode="before")
+    @classmethod
+    def strip_input(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def validate_input_exclusive(self):
@@ -33,6 +38,10 @@ class VerificationRequest(BaseModel):
             raise ValueError("Please provide either a news 'url' OR news 'text' to verify.")
         if url_present and text_present:
             raise ValueError("Please provide either 'url' OR 'text', not both simultaneously.")
+        if self.url:
+            parsed = TypeAdapter(HttpUrl).validate_python(self.url)
+            if parsed.username is not None or parsed.password is not None:
+                raise ValueError("Article URLs must not include credentials.")
         return self
 
 

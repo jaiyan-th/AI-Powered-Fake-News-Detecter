@@ -109,6 +109,10 @@ SERPAPI_KEY=your-serpapi-key-optional
 uvicorn backend.main:app --reload --port 8000
 ```
 
+Set a shared, private `JWT_SECRET_KEY` when deploying multiple workers or keeping
+account sessions valid across server restarts. Without one, the server generates
+a signing key at startup. See `.env.example`.
+
 Open your browser at:
 - **Interactive UI:** [http://localhost:8000](http://localhost:8000)
 - **Swagger / OpenAPI Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)

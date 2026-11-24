@@ -48,3 +48,62 @@ def test_embedding_and_vector_search():
     assert len(retrieved) == 1
     assert retrieved[0]["source_name"] == "The Hindu"
     assert retrieved[0]["relevance_score"] > 0.0
+
+
+def test_vector_search_ranks_before_truncation_and_releases_request_index():
+    from unittest.mock import Mock
+
+    embeddings = Mock()
+    embeddings.embed_text.return_value = [1.0, 0.0]
+    embeddings.embed_batch.side_effect = [
+        [[1.0, 0.0], [0.9, 0.4]],  # Headline ordering in the first pass.
+        [[0.6, 0.8], [1.0, 0.0]],  # Evidence ordering in the second pass.
+    ]
+    service = VectorSearchService(embeddings)
+    articles = [{"title": "First headline"}, {"title": "Second headline"}]
+    results = service.search("ranking-check", articles, "Example claim", top_k=1)
+
+    assert results[0]["title"] == "Second headline"
+    assert service.retrieve_relevant_evidence("Example claim", "ranking-check") == []
+
+
+def test_article_fetch_checks_each_redirect_before_connecting(monkeypatch):
+    from unittest.mock import Mock
+
+    import socket
+    import urllib3
+
+    pool = Mock()
+    pool.urlopen.return_value.get_redirect_location.return_value = "https://second.example/article"
+    open_connection = Mock(return_value=pool)
+
+    def resolve(host, port, **kwargs):
+        address = "93.184.215.14" if host == "first.example" else "127.0.0.1"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(urllib3, "HTTPSConnectionPool", open_connection)
+
+    with pytest.raises(ArticleExtractionError, match="public web server"):
+        ArticleExtractor().extract("https://first.example/article")
+
+    open_connection.assert_called_once()
+    assert open_connection.call_args.args == ("93.184.215.14",)
+    assert open_connection.call_args.kwargs["server_hostname"] == "first.example"
+    assert pool.urlopen.call_args.kwargs["headers"]["Host"] == "first.example"
+    pool.urlopen.return_value.close.assert_called_once()
+    pool.close.assert_called_once()
+
+
+def test_article_extraction_parses_fetched_html(monkeypatch):
+    extractor = ArticleExtractor()
+    content = "The town council unanimously voted to approve the library after residents spoke at a public meeting."
+    html = f"<html><head><title>Council approves library</title></head><body><article><p>{content}</p><p>{content}</p></article></body></html>"
+    monkeypatch.setattr(extractor, "_download", lambda url: ("https://www.example.com/report", html.encode()))
+
+    article = extractor.extract("https://example.com/old-link")
+
+    assert article.title == "Council approves library"
+    assert article.publisher == "example.com"
+    assert article.url == "https://www.example.com/report"
+    assert content in article.content
