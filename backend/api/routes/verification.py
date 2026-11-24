@@ -3,9 +3,12 @@ Verification Route Handler: POST /api/v1/verify
 Analyzes claims against real-time news and automatically records history for logged-in users.
 """
 
+import logging
 from typing import Optional
+from uuid import uuid4
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from backend.db.models import User
 from backend.schemas.verification import VerificationRequest, VerificationResponse
@@ -38,31 +41,32 @@ async def verify_news_claim(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ) -> VerificationResponse:
     # 1. Execute verification pipeline
+    user_id = current_user.id if current_user else None
     response = await pipeline.verify(request)
 
     # 2. If user is logged in, automatically save to verification history
-    if current_user:
+    if user_id is not None:
         try:
             input_type = "url" if request.url else "text"
             input_content = request.url or request.text
             # Extract verification_id from pipeline stages if present
-            verif_id = "v_" + str(response.processing_time_ms)
+            verif_id = str(uuid4())
             for stage in response.pipeline_stages:
                 if stage.details and "verification_id" in stage.details:
                     verif_id = stage.details["verification_id"]
                     break
 
-            history_service.record_verification(
+            await run_in_threadpool(
+                history_service.record_verification,
                 db=db,
-                user_id=current_user.id,
+                user_id=user_id,
                 input_type=input_type,
                 input_content=input_content,
                 response=response,
                 verification_id=verif_id
             )
-        except Exception as e:
+        except Exception:
             # History recording error shouldn't crash the verification response
-            import logging
-            logging.getLogger("news_verification.api").warning(f"Failed to record user history: {e}")
+            logging.getLogger("news_verification.api").exception("Failed to record user history")
 
     return response

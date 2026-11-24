@@ -5,6 +5,7 @@ Authentication API Routes: Register, Login, Profile & Password Management
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from backend.db.models import User
 from backend.schemas.auth import UserRegister, UserLogin, UserUpdate, UserOut, Token
@@ -35,21 +36,13 @@ def _build_user_out(user: User, db: Session, history_service: HistoryService) ->
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user account"
 )
-async def register_user(
+def register_user(
     data: UserRegister,
     db: Session = Depends(get_db),
     auth_service: AuthService = Depends(get_auth_service),
     history_service: HistoryService = Depends(get_history_service)
 ) -> Token:
     clean_email = data.email.lower().strip()
-
-    # Check for existing email
-    existing_user = db.query(User).filter(User.email == clean_email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email address already exists. Please log in."
-        )
 
     # Hash password and create user
     hashed_pwd = auth_service.hash_password(data.password)
@@ -61,7 +54,16 @@ async def register_user(
         last_login_at=datetime.now(timezone.utc)
     )
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if db.query(User).filter(User.email == clean_email).first() is None:
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists. Please log in."
+        ) from None
     db.refresh(new_user)
 
     # Generate token
@@ -76,7 +78,7 @@ async def register_user(
     response_model=Token,
     summary="Authenticate and obtain JWT access token"
 )
-async def login_user(
+def login_user(
     data: UserLogin,
     db: Session = Depends(get_db),
     auth_service: AuthService = Depends(get_auth_service),
@@ -112,7 +114,7 @@ async def login_user(
     response_model=UserOut,
     summary="Get current user details and verification statistics"
 )
-async def get_current_user_profile(
+def get_current_user_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     history_service: HistoryService = Depends(get_history_service)
@@ -125,7 +127,7 @@ async def get_current_user_profile(
     response_model=UserOut,
     summary="Update current user profile and password"
 )
-async def update_user_profile(
+def update_user_profile(
     data: UserUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

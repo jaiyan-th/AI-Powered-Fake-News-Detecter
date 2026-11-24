@@ -45,3 +45,18 @@ def test_verify_empty_body():
     """Verify that sending empty JSON body fails with 422"""
     response = client.post("/api/v1/verify", json={})
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("payload", [
+    {"url": "file:///article"},
+    {"url": "https://user:password@example.com/article"},
+    {"text": "x" * 12001},
+])
+def test_verify_rejects_invalid_or_oversized_input(payload):
+    assert client.post("/api/v1/verify", json=payload).status_code == 422
+
+
+def test_verify_rejects_nonpublic_article():
+    response = client.post("/api/v1/verify", json={"url": "http://127.0.0.1/news"})
+    assert response.status_code == 422
+    assert "public web server" in response.json()["message"]

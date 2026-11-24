@@ -13,7 +13,7 @@ from backend.core.config import settings
 logger = logging.getLogger("news_verification.auth_service")
 
 # Password hashing context using bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 class AuthService:
@@ -36,7 +36,7 @@ class AuthService:
             return False
 
     def hash_password(self, password: str) -> str:
-        """Generate bcrypt hash for password"""
+        """Generate a bcrypt-SHA256 hash for a new password"""
         return pwd_context.hash(password)
 
     def create_access_token(self, user_id: int, email: str, extra_claims: Optional[Dict[str, Any]] = None) -> str:

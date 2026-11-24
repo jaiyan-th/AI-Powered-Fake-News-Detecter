@@ -18,7 +18,7 @@ class GroqService:
         self.client: Optional[Groq] = None
         if self.api_key:
             try:
-                self.client = Groq(api_key=self.api_key)
+                self.client = Groq(api_key=self.api_key, max_retries=0)
                 logger.info("Groq client successfully initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize Groq client: {e}")

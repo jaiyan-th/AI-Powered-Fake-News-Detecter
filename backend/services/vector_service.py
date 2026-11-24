@@ -35,6 +35,14 @@ class VectorSearchService:
         """In-memory vector search engine is always available."""
         return True
 
+    def search(self, verification_id, articles, query_text, top_k):
+        """Use a request-scoped index and release its vectors after retrieval."""
+        try:
+            self.index_evidence(verification_id, articles, query_text=query_text)
+            return self.retrieve_relevant_evidence(query_text, verification_id, top_k)
+        finally:
+            self._store.pop(verification_id, None)
+
     def _split_into_chunks(self, text: str) -> List[str]:
         """Split article text into clean sentence-level semantic chunks."""
         if not text:
@@ -145,14 +153,13 @@ class VectorSearchService:
         Finds the exact most relevant sentence from each article, applies credibility weighting,
         and returns the top-K highest quality evidence items.
         """
-        query_vector = self.embedding_service.embed_text(query_text)
         stored_articles = self._store.get(verification_id, [])
 
         if not stored_articles:
             logger.warning(f"No indexed evidence found for verification '{verification_id}'")
             return []
 
-        q_vec = np.array(query_vector, dtype=np.float32)
+        q_vec = np.array(self.embedding_service.embed_text(query_text), dtype=np.float32)
         q_norm = np.linalg.norm(q_vec)
         if q_norm == 0:
             return []
@@ -191,7 +198,7 @@ class VectorSearchService:
         # Filter by semantic similarity threshold (>= 0.25)
         filtered = [a for a in scored_articles if a["raw_similarity"] >= 0.25]
         # Guaranteed fallback: if strict threshold yielded nothing, return top scored candidates
-        results = filtered[:top_k] if filtered else scored_articles[:top_k]
+        results = filtered or scored_articles
 
         # Prioritize established newsrooms (The Hindu, Times of India, BBC, Reuters, NDTV, Indian Express)
         def rank_key(item):
@@ -201,6 +208,7 @@ class VectorSearchService:
 
         results.sort(key=rank_key, reverse=True)
 
+        results = results[:top_k]
         top_score = results[0]["relevance_score"] if results else "N/A"
         logger.info(f"Retrieved {len(results)} high-precision evidence items (top score: {top_score})")
         return results

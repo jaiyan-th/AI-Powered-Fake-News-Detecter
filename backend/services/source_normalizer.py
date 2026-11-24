@@ -28,15 +28,29 @@ class SourceNormalizer:
         """Strip tracking parameters (utm_*, etc.) to find canonical URL"""
         if not url:
             return ""
-        parsed = urlparse(url)
-        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
-        return clean_url.lower()
+        try:
+            parsed = urlparse(url)
+            host = parsed.hostname
+            port = parsed.port
+        except ValueError:
+            return ""
+        if parsed.scheme not in ("http", "https") or not host or parsed.username is not None:
+            return ""
+        default_port = 443 if parsed.scheme == "https" else 80
+        authority = host.removeprefix("www.")
+        if ":" in authority:
+            authority = f"[{authority}]"
+        if port and port != default_port:
+            authority = f"{authority}:{port}"
+        return f"//{authority}{parsed.path}".rstrip("/")
 
-    def normalize_and_deduplicate(self, raw_articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def normalize_and_deduplicate(
+        self, raw_articles: List[Dict[str, Any]], *, excluded_urls: tuple[str, ...] = ()
+    ) -> List[Dict[str, Any]]:
         """
         Merge, clean, normalize, and deduplicate articles from all providers.
         """
-        seen_canonical_urls = set()
+        seen_canonical_urls = {self._get_canonical_url(url) for url in excluded_urls}
         seen_title_hashes = set()
         normalized_list = []
 
@@ -50,7 +64,7 @@ class SourceNormalizer:
                 continue
 
             canonical_url = self._get_canonical_url(raw_url)
-            if canonical_url in seen_canonical_urls:
+            if not canonical_url or canonical_url in seen_canonical_urls:
                 continue
 
             # Check normalized title duplicate (wire syndication)

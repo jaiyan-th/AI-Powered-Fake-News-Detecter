@@ -10,7 +10,7 @@ python-dotenv>=1.0.0
 # Database & Auth
 sqlalchemy>=2.0.0
 passlib[bcrypt]>=1.7.4
-bcrypt>=4.0.0
+bcrypt>=4.0.0,<5
 pyjwt>=2.8.0
 
 # Async HTTP Client
@@ -28,6 +28,7 @@ newspaper3k>=0.2.8
 lxml_html_clean
 beautifulsoup4>=4.12.2
 requests>=2.31.0
+urllib3>=2.0.0
 
 # Testing & Diagnostics
 pytest>=8.0.0

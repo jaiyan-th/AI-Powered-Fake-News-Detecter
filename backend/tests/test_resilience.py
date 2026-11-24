@@ -48,3 +48,20 @@ def test_embedding_and_vector_search():
     assert len(retrieved) == 1
     assert retrieved[0]["source_name"] == "The Hindu"
     assert retrieved[0]["relevance_score"] > 0.0
+
+
+def test_vector_search_ranks_before_truncation_and_releases_request_index():
+    from unittest.mock import Mock
+
+    embeddings = Mock()
+    embeddings.embed_text.return_value = [1.0, 0.0]
+    embeddings.embed_batch.side_effect = [
+        [[1.0, 0.0], [0.9, 0.4]],  # Headline ordering in the first pass.
+        [[0.6, 0.8], [1.0, 0.0]],  # Evidence ordering in the second pass.
+    ]
+    service = VectorSearchService(embeddings)
+    articles = [{"title": "First headline"}, {"title": "Second headline"}]
+    results = service.search("ranking-check", articles, "Example claim", top_k=1)
+
+    assert results[0]["title"] == "Second headline"
+    assert service.retrieve_relevant_evidence("Example claim", "ranking-check") == []

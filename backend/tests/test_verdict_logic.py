@@ -67,3 +67,16 @@ def test_rule_based_fallback_supporting_sources():
     assert response.confidence >= 75
     assert response.evidence_summary.supporting == 2
     assert response.evidence_summary.contradicting == 0
+
+
+def test_context_only_evidence_does_not_produce_definitive_verdict(sample_claim_info, sample_evidence_sources):
+    from unittest.mock import Mock
+    from backend.schemas.verification import StanceEnum
+
+    groq = Mock()
+    sources = [source.model_copy(update={"stance": StanceEnum.NEUTRAL}) for source in sample_evidence_sources]
+    response = VerdictGenerator(groq).synthesize_verdict(sample_claim_info, sources, [], 0)
+
+    assert response.verdict == VerdictEnum.UNVERIFIED
+    assert response.evidence_summary.neutral == len(sources)
+    groq.generate_json.assert_not_called()
