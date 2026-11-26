@@ -10,6 +10,14 @@ from backend.schemas.verification import ClaimInfo, EvidenceSource, StanceEnum
 
 
 @pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    from backend.main import rate_limiter
+    rate_limiter.clear()
+    yield
+    rate_limiter.clear()
+
+
+@pytest.fixture(autouse=True)
 def test_database(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
     monkeypatch.setattr(database, "engine", engine)

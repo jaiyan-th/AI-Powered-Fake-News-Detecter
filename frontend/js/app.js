@@ -45,12 +45,30 @@ function setSession(accessToken, profile) {
     byId('account-button-label').textContent = user ? 'Account' : 'Sign in';
 }
 
-async function api(path, { method = 'GET', body, authenticated = true } = {}) {
+async function api(path, { method = 'GET', body, authenticated = true, timeoutMs } = {}) {
     const requestToken = authenticated ? token : null;
-    const headers = {};
+    const headers = { Accept: 'application/json' };
     if (requestToken) headers.Authorization = 'Bearer ' + requestToken;
     if (body) headers['Content-Type'] = 'application/json';
-    const response = await fetch('/api/v1' + path, { method, headers, body: body && JSON.stringify(body) });
+    const controller = new AbortController();
+    const effectiveTimeout = timeoutMs ?? (path === '/verify' ? 65000 : 15000);
+    const timer = setTimeout(() => controller.abort(), effectiveTimeout);
+    let response;
+    try {
+        response = await fetch('/api/v1' + path, {
+            method,
+            headers,
+            body: body && JSON.stringify(body),
+            signal: controller.signal
+        });
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new Error('The request timed out. Please try again.');
+        }
+        throw new Error('Network error. Check your connection and try again.');
+    } finally {
+        clearTimeout(timer);
+    }
     if (response.status === 204) return;
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -207,7 +225,10 @@ async function submitAccount(event) {
         if (accountMode === 'profile') {
             const body = { full_name: fullName };
             const newPassword = byId('new-password').value;
-            if (newPassword) Object.assign(body, { current_password: password, new_password: newPassword });
+            if (newPassword) {
+                if (!password) throw new Error('Enter your current password to set a new password.');
+                Object.assign(body, { current_password: password, new_password: newPassword });
+            }
             setSession(token, await api('/auth/me', { method: 'PUT', body }));
             notify('Account updated.');
         } else {
@@ -234,7 +255,10 @@ async function loadHistory(page) {
     byId('clear-history').disabled = true;
     message('history-status', 'Loading history…');
     try {
-        const query = new URLSearchParams({ page, verdict: byId('history-filter').value });
+        const params = { page };
+        const verdictFilter = byId('history-filter').value;
+        if (verdictFilter) params.verdict = verdictFilter;
+        const query = new URLSearchParams(params);
         const data = await api('/history?' + query);
         if (request !== historyRequest || !historyDialog.open) return;
         if (page > Math.max(data.total_pages, 1)) {

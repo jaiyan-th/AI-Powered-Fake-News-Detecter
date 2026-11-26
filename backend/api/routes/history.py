@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.db.models import User
 from backend.schemas.history import HistoryList, HistoryDetail
+from backend.schemas.verification import VerdictEnum
 from backend.services.history_service import HistoryService
 from backend.api.deps import get_db, get_history_service, get_current_user
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/v1/history", tags=["Verification History"])
 def list_verification_history(
     page: int = Query(default=1, ge=1, description="Page number"),
     page_size: int = Query(default=10, ge=1, le=50, description="Items per page"),
-    verdict: Optional[str] = Query(default=None, description="Optional verdict filter: REAL, FALSE, MISLEADING, UNVERIFIED"),
+    verdict: Optional[VerdictEnum] = Query(default=None, description="Optional verdict filter: REAL, FALSE, MISLEADING, UNVERIFIED"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     history_service: HistoryService = Depends(get_history_service)
@@ -32,7 +33,7 @@ def list_verification_history(
         user_id=current_user.id,
         page=page,
         page_size=page_size,
-        verdict_filter=verdict
+        verdict_filter=verdict.value if verdict else None
     )
 
 

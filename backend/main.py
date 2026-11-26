@@ -3,14 +3,21 @@ AI News Verification System - FastAPI Main Application
 """
 
 import os
+import re
+import uuid
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from backend.core.config import settings
-from backend.core.exceptions import NewsVerificationException, news_verification_exception_handler
+from backend.core.exceptions import (
+    NewsVerificationException,
+    news_verification_exception_handler,
+    unhandled_exception_handler,
+)
+from backend.core.rate_limit import SlidingWindowRateLimiter, client_ip_from_request
 from backend.db import database
 from backend.api.routes.verification import router as verification_router
 from backend.api.routes.health import router as health_router
@@ -69,6 +76,55 @@ if settings.CORS_ORIGINS:
 
 # Register Custom Exception Handlers
 app.add_exception_handler(NewsVerificationException, news_verification_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
+
+rate_limiter = SlidingWindowRateLimiter()
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+@app.middleware("http")
+async def production_security_middleware(request: Request, call_next):
+    incoming_id = request.headers.get("x-request-id", "").strip()
+    request_id = incoming_id if _REQUEST_ID_PATTERN.match(incoming_id) else str(uuid.uuid4())
+    request.state.request_id = request_id
+
+    if settings.RATE_LIMIT_ENABLED and request.method == "POST":
+        path = request.url.path
+        client_ip = client_ip_from_request(request, trust_proxy=settings.TRUST_PROXY_HEADERS)
+        limit = 0
+        bucket_prefix = ""
+        if path == "/api/v1/verify":
+            limit = settings.RATE_LIMIT_VERIFY_PER_MINUTE
+            bucket_prefix = "verify"
+        elif path in ("/api/v1/auth/login", "/api/v1/auth/register"):
+            limit = settings.RATE_LIMIT_AUTH_PER_MINUTE
+            bucket_prefix = "auth"
+
+        if limit > 0:
+            allowed, retry_after = rate_limiter.allow(f"{bucket_prefix}:{client_ip}", limit=limit, window_seconds=60)
+            if not allowed:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "RateLimitExceeded",
+                        "message": "Too many requests. Please wait a moment before trying again.",
+                    },
+                    headers={
+                        "Retry-After": str(retry_after),
+                        "X-Request-ID": request_id,
+                    },
+                )
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if settings.PRODUCTION:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 
 # Include Routers
 app.include_router(verification_router)
@@ -87,7 +143,7 @@ if os.path.isdir(FRONTEND_DIR):
     async def serve_index():
         index_path = os.path.join(FRONTEND_DIR, "index.html")
         if os.path.exists(index_path):
-            return FileResponse(index_path)
+            return FileResponse(index_path, headers={"Cache-Control": "no-cache"})
         return {"message": f"{settings.APP_NAME} API is running. Visit /docs for Swagger UI."}
 
 

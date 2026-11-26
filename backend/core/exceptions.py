@@ -68,3 +68,14 @@ async def news_verification_exception_handler(request: Request, exc: NewsVerific
             "details": exc.details
         }
     )
+
+
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception on %s", request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": "InternalServerError",
+            "message": "An unexpected internal error occurred. Please try again later.",
+        },
+    )

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Verify a claim against news reporting, explore the sources, and share the evidence.">
   <title>VerifyNews | Fact check a claim</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2306b6d4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s7-3.5 7-10V5l-7-3-7 3v7c0 6.5 7 10 7 10Z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -32,7 +33,7 @@
     <div class="shell topbar">
       <a class="mobile-brand" href="/" aria-label="VerifyNews home"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg></span>Verify<span>News</span></a>
       <p class="breadcrumb">Workspace <span aria-hidden="true">/</span> <strong>Verify a claim</strong></p>
-      <button class="outline account-button" id="account-button"><svg class="icon" aria-hidden="true"><use href="#icon-user"/></svg><span id="account-button-label">Sign in</span></button>
+      <button type="button" class="outline account-button" id="account-button"><svg class="icon" aria-hidden="true"><use href="#icon-user"/></svg><span id="account-button-label">Sign in</span></button>
     </div>
   </header>
   <aside class="sidebar">
@@ -98,9 +99,9 @@
       <div class="section-heading">
         <h2 id="report-heading" tabindex="-1">Verification report</h2>
         <div class="actions">
-          <button class="outline" id="copy-report">Copy</button>
-          <button class="outline" id="print-report">Print</button>
-          <button class="primary" id="share-report"><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg>Share report</button>
+          <button type="button" class="outline" id="copy-report">Copy</button>
+          <button type="button" class="outline" id="print-report">Print</button>
+          <button type="button" class="primary" id="share-report"><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg>Share report</button>
         </div>
       </div>
       <div class="card report-card">

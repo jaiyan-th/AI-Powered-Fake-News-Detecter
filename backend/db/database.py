@@ -2,7 +2,7 @@
 Database Engine & Session Management using SQLAlchemy
 """
 
-from sqlalchemy import URL, create_engine
+from sqlalchemy import URL, create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 from backend.core.config import settings
 
@@ -15,6 +15,19 @@ engine = create_engine(
     echo=settings.DEBUG,
     hide_parameters=True,
 )
+
+
+@event.listens_for(engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, _connection_record):
+    """Enable WAL mode, foreign key enforcement, and busy timeout on SQLite connections."""
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON;")
+        cursor.execute("PRAGMA busy_timeout=5000;")
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+    finally:
+        cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

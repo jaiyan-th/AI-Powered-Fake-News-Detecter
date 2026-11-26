@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = Field(default_factory=lambda: token_urlsafe(48), description="HMAC secret key for JWT")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days session
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_VERIFY_PER_MINUTE: int = 20
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 30
+    TRUST_PROXY_HEADERS: bool = False
 
     @model_validator(mode="after")
     def validate_production_settings(self):
