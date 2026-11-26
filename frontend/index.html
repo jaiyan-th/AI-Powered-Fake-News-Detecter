@@ -3,72 +3,104 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Check a claim or article against news reports and review the evidence behind the result.">
+  <meta name="description" content="Verify a claim against news reporting, explore the sources, and share the evidence.">
   <title>VerifyNews | Fact check a claim</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/styles.css">
   <script src="/static/js/app.js" defer></script>
 </head>
 <body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 22s7-3.5 7-10V5l-7-3-7 3v7c0 6.5 7 10 7 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="icon-scan" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3m0 8v3a2 2 0 0 1-2 2h-3m-8 0H5a2 2 0 0 1-2-2v-3M3 12h18"/></symbol>
+    <symbol id="icon-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 1 2.7 6.4M3 4v8h8m1-5v5l3 2"/></symbol>
+    <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 6C9 3 5 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-3-1-7-1-10 2Zm0 0v15"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></symbol>
+    <symbol id="icon-text" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24"><path d="m10 13 4-4m-6 6-1 1a3.5 3.5 0 0 1-5-5l5-5a3.5 3.5 0 0 1 5 0m0 12a3.5 3.5 0 0 0 5 0l5-5a3.5 3.5 0 0 0-5-5l-1 1" transform="translate(0 1)"/></symbol>
+    <symbol id="icon-paste" viewBox="0 0 24 24"><path d="M8 5H5v16h14V5h-3M8 3h8v5H8zm0 10h8m-8 4h6"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></symbol>
+    <symbol id="icon-layers" viewBox="0 0 24 24"><path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 16l10 5 10-5"/></symbol>
+    <symbol id="icon-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8 11 8-5m-8 7 8 5"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+  </svg>
   <a class="skip" href="#main">Skip to content</a>
   <header class="site-header">
-    <nav class="shell nav" aria-label="Main navigation">
-      <a class="brand" href="/" aria-label="VerifyNews home"><span class="brand-mark" aria-hidden="true">✓</span>VerifyNews</a>
-      <div class="actions">
-        <button class="quiet" id="history-button">History</button>
-        <button class="outline" id="account-button">Sign in</button>
-      </div>
-    </nav>
+    <div class="shell topbar">
+      <a class="mobile-brand" href="/" aria-label="VerifyNews home"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg></span>Verify<span>News</span></a>
+      <p class="breadcrumb">Workspace <span aria-hidden="true">/</span> <strong>Verify a claim</strong></p>
+      <button class="outline account-button" id="account-button"><svg class="icon" aria-hidden="true"><use href="#icon-user"/></svg><span id="account-button-label">Sign in</span></button>
+    </div>
   </header>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="VerifyNews home"><span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg></span>Verify<span>News</span></a>
+    <nav class="side-nav" aria-label="Main navigation">
+      <a class="nav-item active" href="#verify-form" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-scan"/></svg><span>Verify a claim</span></a>
+      <button class="nav-item" id="history-button" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-history"/></svg><span>Saved reports</span></button>
+      <a class="nav-item" href="#method"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg><span>How it works</span></a>
+    </nav>
+    <a class="api-link" href="/docs">API documentation <svg class="icon" aria-hidden="true"><use href="#icon-external"/></svg></a>
+  </aside>
 
   <main class="shell" id="main">
-    <section class="workspace" aria-labelledby="page-title">
-      <div class="intro">
-        <p class="eyebrow">Fact-checking workspace</p>
-        <h1 id="page-title">Check the claim.<br><em>Read the evidence.</em></h1>
-        <p>Enter a headline, a statement, or an article link to see how it holds up against available reporting.</p>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-art" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <h1 id="page-title">Check before<br><em>you share.</em></h1>
+        <p>Check a headline or article against news reporting and see the sources behind the verdict.</p>
       </div>
-      <form class="card composer" id="verify-form" novalidate>
-        <h2>What would you like to verify?</h2>
+    </section>
+
+    <div class="workspace">
+      <form class="card composer" id="verify-form" aria-labelledby="composer-title" novalidate>
+        <div class="card-heading">
+          <span class="tile-icon cyan"><svg class="icon" aria-hidden="true"><use href="#icon-scan"/></svg></span>
+          <div><h2 id="composer-title">Verify a claim</h2><p>Start with a statement, headline, or public article.</p></div>
+        </div>
         <div class="mode" role="group" aria-label="Input type">
-          <button type="button" id="mode-text" aria-pressed="true">Claim text</button>
-          <button type="button" id="mode-url" aria-pressed="false">Article URL</button>
+          <button type="button" id="mode-text" aria-pressed="true"><svg class="icon" aria-hidden="true"><use href="#icon-text"/></svg>Claim text</button>
+          <button type="button" id="mode-url" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg>Article URL</button>
         </div>
         <div class="field" id="text-field">
-          <label for="claim-text">Claim or headline</label>
+          <label class="sr-only" for="claim-text">Claim or headline</label>
           <textarea id="claim-text" rows="4" maxlength="12000" placeholder="Paste the specific claim you want to check…" aria-describedby="text-count"></textarea>
           <small id="text-count">0 / 12,000 characters</small>
         </div>
         <div class="field" id="url-field" hidden>
-          <label for="claim-url">Public article URL</label>
+          <label class="sr-only" for="claim-url">Public article URL</label>
           <input type="url" id="claim-url" maxlength="2048" placeholder="https://example.com/news/article" autocomplete="off" spellcheck="false">
           <small>If the article can't be opened, try pasting the claim text.</small>
         </div>
         <p class="error" id="verify-error" role="alert" hidden></p>
         <div class="composer-actions">
           <div class="actions">
-            <button type="button" class="quiet" id="paste">Paste</button>
+            <button type="button" class="outline compact" id="paste"><svg class="icon" aria-hidden="true"><use href="#icon-paste"/></svg>Paste</button>
             <button type="button" class="quiet" id="clear">Clear</button>
           </div>
-          <button type="submit" class="primary" id="verify-button">Verify claim <span aria-hidden="true">→</span></button>
+          <button type="submit" class="primary" id="verify-button"><span id="verify-label">Verify claim</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
         </div>
-        <p class="progress" id="progress" role="status" hidden><span aria-hidden="true"></span>Checking the claim against available reporting…</p>
+        <div class="progress" id="progress" role="status" hidden><span class="spinner" aria-hidden="true"></span>Checking the claim against available reporting…</div>
       </form>
-    </section>
-
-    <details class="method">
-      <summary>How verification works</summary>
-      <p>VerifyNews extracts the central claim, searches news providers, and compares retrieved reporting with the claim. The report shows which sources support it, contradict it, or provide context. Review the linked reporting and the limitations before relying on a verdict.</p>
-    </details>
+      <section class="card method" id="method" aria-labelledby="method-title">
+        <h2 id="method-title">How it works</h2>
+        <ol class="method-list">
+          <li><span class="tile-icon cyan"><svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg></span><div><h3>Find coverage</h3><p>Search news providers for reporting on the claim.</p></div></li>
+          <li><span class="tile-icon lavender"><svg class="icon" aria-hidden="true"><use href="#icon-layers"/></svg></span><div><h3>Compare the evidence</h3><p>See which sources support, contradict, or add context.</p></div></li>
+          <li><span class="tile-icon mint"><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg></span><div><h3>Share what you find</h3><p>Send the report with its source links and limitations.</p></div></li>
+        </ol>
+      </section>
+    </div>
 
     <section id="report" class="report" aria-labelledby="report-heading" hidden>
       <div class="section-heading">
         <h2 id="report-heading" tabindex="-1">Verification report</h2>
         <div class="actions">
-          <button class="outline" id="copy-report">Copy report</button>
+          <button class="outline" id="copy-report">Copy</button>
           <button class="outline" id="print-report">Print</button>
+          <button class="primary" id="share-report"><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg>Share report</button>
         </div>
       </div>
       <div class="card report-card">
@@ -82,9 +114,17 @@
       <div class="section-heading source-heading"><h2>Evidence sources</h2><span class="muted" id="source-count"></span></div>
       <div id="source-list" class="sources"></div>
     </section>
+    <section class="examples" aria-labelledby="examples-title">
+      <h2 id="examples-title">Try an example</h2>
+      <div class="example-grid">
+        <button class="card example" type="button"><span><small>Science</small><span data-claim>NASA launched the James Webb Space Telescope in 2021.</span></span><svg class="icon" aria-hidden="true"><use href="#icon-external"/></svg></button>
+        <button class="card example" type="button"><span><small>Climate</small><span data-claim>2023 was the warmest year on record at the time.</span></span><svg class="icon" aria-hidden="true"><use href="#icon-external"/></svg></button>
+        <button class="card example" type="button"><span><small>Technology</small><span data-claim>India landed Chandrayaan-3 near the Moon’s south pole.</span></span><svg class="icon" aria-hidden="true"><use href="#icon-external"/></svg></button>
+      </div>
+    </section>
     <p class="notice" id="notice" role="status" hidden></p>
   </main>
-  <footer class="shell footer"><span>VerifyNews</span><a href="/docs">API documentation</a></footer>
+  <footer class="shell footer"><span>VerifyNews</span><a href="/docs">API documentation <span aria-hidden="true">↗</span></a></footer>
 
   <dialog id="account-dialog" aria-labelledby="account-heading">
     <div class="dialog-heading"><h2 id="account-heading">Sign in</h2><button class="quiet" data-close="account-dialog" aria-label="Close account dialog">✕</button></div>
@@ -108,6 +148,18 @@
     <p id="history-status" role="status"></p>
     <ul class="history-list" id="history-list"></ul>
     <div class="actions pagination" id="pagination" hidden><button class="outline" id="previous-page">Previous</button><span id="history-page"></span><button class="outline" id="next-page">Next</button></div>
+  </dialog>
+  <dialog id="share-dialog" aria-labelledby="share-heading">
+    <div class="dialog-heading"><h2 id="share-heading">Share report</h2><button class="quiet" data-close="share-dialog" aria-label="Close share dialog">✕</button></div>
+    <div class="field">
+      <label for="manual-copy">Report text</label>
+      <textarea id="manual-copy" rows="8" readonly></textarea>
+    </div>
+    <div class="actions dialog-actions">
+      <button class="primary" id="share-copy" type="button">Copy text</button>
+      <button class="outline" id="share-device" type="button" hidden>Share via device</button>
+    </div>
+    <p id="share-status" role="status" hidden></p>
   </dialog>
 </body>
 </html>

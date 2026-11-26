@@ -1,4 +1,8 @@
 @echo off
+cd /d "%~dp0"
+setlocal
+set "PYTHON_EXE=python"
+if exist ".venv\Scripts\python.exe" set "PYTHON_EXE=.venv\Scripts\python.exe"
 title AI News Verification System
 echo ========================================================================
 echo    🔍 AI NEWS VERIFICATION SYSTEM (FastAPI + Groq + Vector RAG)
@@ -41,23 +45,29 @@ if not exist .env (
 echo Starting server at http://localhost:8000 ...
 echo Swagger UI docs at http://localhost:8000/docs ...
 echo.
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+"%PYTHON_EXE%" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 pause
 goto menu
 
 :install
 echo.
 echo Installing Python dependencies...
-python -m pip install -r requirements.txt
+"%PYTHON_EXE%" -m pip install -r requirements.txt
+if errorlevel 1 goto install_failed
 echo.
 echo Done!
+pause
+goto menu
+
+:install_failed
+echo Dependency installation failed. Review the error above.
 pause
 goto menu
 
 :test
 echo.
 echo Running Automated Test Suite...
-python -m pytest backend/tests/ -v
+"%PYTHON_EXE%" -m pytest backend/tests/ -v
 echo.
 pause
 goto menu

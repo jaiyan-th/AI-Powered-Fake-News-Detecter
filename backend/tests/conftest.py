@@ -3,9 +3,20 @@ Pytest Fixtures and Mock Providers for News Verification Test Suite
 """
 
 import pytest
-from unittest.mock import MagicMock
+from sqlalchemy import create_engine
+from backend.db import database
 from backend.services.article_extractor import ExtractedArticle
 from backend.schemas.verification import ClaimInfo, EvidenceSource, StanceEnum
+
+
+@pytest.fixture(autouse=True)
+def test_database(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    monkeypatch.setattr(database, "engine", engine)
+    monkeypatch.setitem(database.SessionLocal.kw, "bind", engine)
+    database.init_db()
+    yield
+    engine.dispose()
 
 
 @pytest.fixture

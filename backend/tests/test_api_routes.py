@@ -2,11 +2,31 @@
 Tests for API Routes & Input Validation
 """
 
+from io import BytesIO
+from wsgiref.util import setup_testing_defaults
+
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app
 
 client = TestClient(app)
+
+
+def test_wsgi_health_endpoint():
+    from wsgi import UniversalApp
+
+    environ = {"PATH_INFO": "/api/v1/health", "wsgi.input": BytesIO()}
+    setup_testing_defaults(environ)
+    statuses = []
+
+    def start_response(status, headers, exc_info=None):
+        if exc_info:
+            raise exc_info[1].with_traceback(exc_info[2])
+        statuses.append(status)
+
+    body = b"".join(UniversalApp(app)(environ, start_response))
+    assert statuses == ["200 OK"]
+    assert b'"application":"running"' in body
 
 
 def test_health_endpoint():

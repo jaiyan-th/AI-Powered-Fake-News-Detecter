@@ -3,6 +3,7 @@ Tests for Verdict Generation & Stance Aggregation Logic
 """
 
 from unittest.mock import MagicMock
+from backend.services.evidence_analyzer import EvidenceAnalyzer
 from backend.services.verdict_generator import VerdictGenerator
 from backend.schemas.verification import (
     ClaimInfo, EvidenceSource, StanceEnum, VerdictEnum
@@ -80,3 +81,45 @@ def test_context_only_evidence_does_not_produce_definitive_verdict(sample_claim_
     assert response.verdict == VerdictEnum.UNVERIFIED
     assert response.evidence_summary.neutral == len(sources)
     groq.generate_json.assert_not_called()
+
+
+def test_evidence_requires_a_quote_from_the_matching_source(sample_claim_info):
+    groq = MagicMock()
+    quote = "The cabinet approved the solar expansion."
+    groq.generate_json.return_value = {"evaluations": [
+        {"source_id": "invalid", "stance": "SUPPORT", "evidence_snippet": quote},
+        {"source_id": 1, "stance": "SUPPORT", "evidence_snippet": quote},
+        {"source_id": 2, "stance": "SUPPORT", "evidence_snippet": quote},
+    ]}
+    documents = [
+        {"title": "Solar expansion approved", "content_snippet": quote},
+        {"title": "Weather bulletin", "content_snippet": "Rain is expected."},
+    ]
+
+    first, second = EvidenceAnalyzer(groq).analyze_evidence_sources(sample_claim_info, documents)
+
+    assert first.stance == StanceEnum.SUPPORT
+    assert first.evidence_snippet == quote
+    assert second.stance == StanceEnum.NEUTRAL
+    assert second.evidence_snippet == "Rain is expected."
+
+
+def test_same_domain_does_not_corroborate_a_real_verdict(sample_claim_info, sample_evidence_sources):
+    groq = MagicMock()
+    groq.generate_json.return_value = {"verdict": "REAL", "summary": "Confirmed."}
+    first, second = sample_evidence_sources
+    sources = [first, second.model_copy(update={"domain": f"www.{first.domain}"})]
+    response = VerdictGenerator(groq).synthesize_verdict(sample_claim_info, sources, [], 0)
+
+    assert response.verdict == VerdictEnum.UNVERIFIED
+    assert "Confirmed." not in response.summary
+
+
+def test_conflicting_evidence_stays_unverified_when_synthesis_fails(sample_claim_info, sample_evidence_sources):
+    groq = MagicMock()
+    groq.generate_json.side_effect = TimeoutError()
+    first, second = sample_evidence_sources
+    sources = [first, second.model_copy(update={"stance": StanceEnum.CONTRADICT})]
+    response = VerdictGenerator(groq).synthesize_verdict(sample_claim_info, sources, [], 0)
+
+    assert response.verdict == VerdictEnum.UNVERIFIED

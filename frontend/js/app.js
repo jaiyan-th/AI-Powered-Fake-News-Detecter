@@ -5,6 +5,7 @@ const textInput = byId('claim-text');
 const urlInput = byId('claim-url');
 const accountDialog = byId('account-dialog');
 const historyDialog = byId('history-dialog');
+const shareDialog = byId('share-dialog');
 const verdictLabels = { REAL: 'Supported', FALSE: 'False', MISLEADING: 'Misleading', UNVERIFIED: 'Unverified' };
 const stanceLabels = { SUPPORT: 'Supports claim', CONTRADICT: 'Contradicts claim', NEUTRAL: 'Provides context' };
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -41,7 +42,7 @@ function setSession(accessToken, profile) {
     user = profile;
     if (token) sessionStorage.setItem('verifynews-token', token);
     else sessionStorage.removeItem('verifynews-token');
-    byId('account-button').textContent = user ? 'Account' : 'Sign in';
+    byId('account-button-label').textContent = user ? 'Account' : 'Sign in';
 }
 
 async function api(path, { method = 'GET', body, authenticated = true } = {}) {
@@ -156,6 +157,7 @@ async function verify(event) {
     }
     message('verify-error');
     button.disabled = true;
+    byId('verify-label').textContent = 'Checking…';
     byId('progress').hidden = false;
     try {
         renderReport(await api('/verify', { method: 'POST', body: { [mode]: value } }));
@@ -163,6 +165,7 @@ async function verify(event) {
         message('verify-error', error.message);
     } finally {
         button.disabled = false;
+        byId('verify-label').textContent = 'Verify claim';
         byId('progress').hidden = true;
     }
 }
@@ -316,22 +319,58 @@ byId('paste').onclick = async () => {
         input.focus();
     }
 };
-byId('copy-report').onclick = async () => {
-    if (!report) return;
-    const lines = [
+function reportText() {
+    return [
         'VerifyNews — ' + verdictLabels[report.verdict] + ' (' + report.confidence + '% verification confidence)',
-        report.claim.primary_claim, report.explanation,
+        report.claim.primary_claim, report.explanation || report.summary,
         ...(report.limitations || []),
         ...report.sources.map((source) => [source.title, publicWebUrl(source.url)].filter(Boolean).join(' — '))
-    ];
+    ].filter(Boolean).join('\n\n');
+}
+
+function openShareDialog(text) {
+    byId('manual-copy').value = text;
+    byId('share-device').hidden = typeof navigator.share !== 'function';
+    message('share-status');
+    if (!shareDialog.open) shareDialog.showModal();
+}
+
+async function copyReport(text) {
     try {
-        await navigator.clipboard.writeText(lines.join('\n\n'));
-        notify('Report copied.');
+        await navigator.clipboard.writeText(text);
+        if (shareDialog.open) {
+            message('share-status', 'Report copied.');
+        } else {
+            notify('Report copied.');
+        }
     } catch {
-        notify('Clipboard access is unavailable.');
+        openShareDialog(text);
+        message('share-status', 'Clipboard access is unavailable. Copy the selected text manually.');
+        const field = byId('manual-copy');
+        field.focus();
+        field.select();
+    }
+}
+
+byId('copy-report').onclick = () => report && copyReport(reportText());
+byId('share-report').onclick = () => report && openShareDialog(reportText());
+byId('share-copy').onclick = () => copyReport(byId('manual-copy').value);
+byId('share-device').onclick = async () => {
+    try {
+        await navigator.share({ title: 'VerifyNews report', text: byId('manual-copy').value });
+    } catch (error) {
+        if (error.name !== 'AbortError') message('share-status', 'Device sharing is unavailable. Use Copy text to share this report.');
     }
 };
 byId('print-report').onclick = () => window.print();
+document.querySelectorAll('.example').forEach((button) => {
+    button.onclick = () => {
+        selectMode('text');
+        textInput.value = button.querySelector('[data-claim]').textContent;
+        updateCount();
+        textInput.focus();
+    };
+});
 byId('account-button').onclick = () => openAccount(user ? 'profile' : 'login');
 byId('account-form').onsubmit = submitAccount;
 byId('account-switch').onclick = () => {

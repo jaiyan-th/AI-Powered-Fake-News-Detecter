@@ -111,6 +111,7 @@ class VerificationPipeline:
         # STAGE 4: Multi-Provider Concurrent Search (Google News + NewsAPI)
         t0 = time.perf_counter()
         raw_articles = []
+        failed_providers = []
 
         newsapi_res, serpapi_res = await asyncio.gather(
             self.newsapi_service.search(search_queries),
@@ -118,22 +119,19 @@ class VerificationPipeline:
             return_exceptions=True
         )
 
-        if isinstance(newsapi_res, list):
-            raw_articles.extend(newsapi_res)
-        else:
-            logger.warning(f"NewsAPI task returned error: {newsapi_res}")
-
-        if isinstance(serpapi_res, list):
-            raw_articles.extend(serpapi_res)
-        else:
-            logger.warning(f"SerpAPI task returned error: {serpapi_res}")
+        for provider, result in (("NewsAPI", newsapi_res), ("Google News", serpapi_res)):
+            if isinstance(result, list):
+                raw_articles.extend(result)
+            else:
+                failed_providers.append(provider)
+                logger.warning("%s search failed (%s)", provider, type(result).__name__)
 
         stage_duration = round((time.perf_counter() - t0) * 1000, 2)
         pipeline_stages.append(PipelineStage(
             stage="multi_source_search",
-            status="COMPLETED",
+            status="DEGRADED" if failed_providers else "COMPLETED",
             duration_ms=stage_duration,
-            details={"raw_sources_found": len(raw_articles)}
+            details={"raw_sources_found": len(raw_articles), "failed_providers": failed_providers}
         ))
 
         # STAGE 5: Normalization & Deduplication
@@ -198,6 +196,10 @@ class VerificationPipeline:
         ))
 
         verdict_response.pipeline_stages = pipeline_stages
+        if failed_providers:
+            verdict_response.limitations.append(
+                f"Search failed for {', '.join(failed_providers)} during this verification."
+            )
 
         # Update final elapsed time
         verdict_response.processing_time_ms = round((time.perf_counter() - pipeline_start) * 1000, 2)

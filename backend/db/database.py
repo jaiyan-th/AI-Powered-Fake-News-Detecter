@@ -38,7 +38,3 @@ def init_db():
     """Create all database tables on startup"""
     import backend.db.models  # Ensure models are imported
     Base.metadata.create_all(bind=engine)
-
-# Auto-initialize tables
-init_db()
-

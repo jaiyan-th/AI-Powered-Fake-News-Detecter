@@ -5,6 +5,7 @@ Health Check and Diagnostics Route Handler: GET /api/v1/health
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from backend.schemas.health import HealthResponse
+from backend.core.config import settings
 from backend.services.groq_service import GroqService
 from backend.services.newsapi_service import NewsAPIService
 from backend.services.serpapi_service import SerpAPIService
@@ -34,7 +35,7 @@ async def check_system_health(
     vector_ok = vector_service.is_available()
 
     overall_status = "healthy"
-    if not groq_ok:
+    if not groq_ok or not vector_ok:
         overall_status = "degraded"
 
     dependencies = {
@@ -55,9 +56,9 @@ async def check_system_health(
             "role": "In-memory semantic vector index & similarity retrieval"
         },
         "embedding_engine": {
-            "status": "operational",
-            "model": "BAAI/bge-small-en-v1.5",
-            "dimension": 384
+            "status": "initialized_on_demand",
+            "model": settings.EMBEDDING_MODEL,
+            "dimension": settings.EMBEDDING_DIM
         }
     }
 
@@ -82,7 +83,11 @@ async def test_search_diagnostics(
     rss_error = None
     try:
         async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
-            r = await client.get(f"https://news.google.com/rss/search?q={q}&hl=en-IN&gl=IN&ceid=IN:en", headers={"User-Agent": "Mozilla/5.0"})
+            r = await client.get(
+                "https://news.google.com/rss/search",
+                params={"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
             rss_status = r.status_code
             if r.status_code == 200:
                 root = ET.fromstring(r.content)

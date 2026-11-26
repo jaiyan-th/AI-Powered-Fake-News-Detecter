@@ -5,7 +5,7 @@ and generates concise evidence-grounded explanations.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List
 from backend.services.groq_service import GroqService
 from backend.schemas.verification import (
     ClaimInfo, EvidenceSource, VerdictEnum, StanceEnum,
@@ -38,6 +38,7 @@ class VerdictGenerator:
         support_count = len(supporting)
         contradict_count = len(contradicting)
         neutral_count = len(neutral)
+        supporting_domains = {s.domain.lower().removeprefix("www.") for s in supporting if s.domain}
 
         evidence_summary = EvidenceSummary(
             supporting=support_count,
@@ -62,9 +63,8 @@ class VerdictGenerator:
                 claim=claim_info,
                 summary="Insufficient external evidence was retrieved to verify this claim.",
                 explanation=(
-                    "No matching authoritative reports or fact-checks were found across the connected "
-                    "news and search providers for this specific claim. This frequently occurs for obscure claims, "
-                    "very recent rumors, or unindexed topics."
+                    "This run has too little evidence to assess the claim. Coverage gaps or unavailable "
+                    "providers can limit the evidence retrieved."
                 ),
                 evidence_summary=evidence_summary,
                 sources=[],
@@ -139,9 +139,11 @@ class VerdictGenerator:
             )
 
             raw_verdict = str(llm_result.get("verdict", "UNVERIFIED")).upper().strip()
-            if raw_verdict not in [v.value for v in VerdictEnum]:
-                raw_verdict = "UNVERIFIED"
             verdict = VerdictEnum(raw_verdict)
+            if verdict == VerdictEnum.REAL and (len(supporting_domains) < 2 or contradict_count):
+                raise ValueError("Verdict conflicts with the available evidence.")
+            if verdict == VerdictEnum.FALSE and (not contradict_count or support_count):
+                raise ValueError("Verdict conflicts with the available evidence.")
 
             summary = llm_result.get("summary", "").strip() or f"Verification completed with verdict: {verdict.value}."
             explanation = llm_result.get("explanation", "").strip() or "Evidence evaluated across retrieved news sources."
@@ -183,15 +185,12 @@ class VerdictGenerator:
             logger.error(f"LLM verdict synthesis error: {e}. Building rule-based fallback response.")
 
             # Rule-based fallback
-            if support_count >= 2 and contradict_count == 0:
+            if len(supporting_domains) >= 2 and contradict_count == 0:
                 fallback_verdict = VerdictEnum.REAL
                 conf = 80
             elif contradict_count >= 1 and support_count == 0:
                 fallback_verdict = VerdictEnum.FALSE
                 conf = 85
-            elif support_count >= 1 and contradict_count >= 1:
-                fallback_verdict = VerdictEnum.MISLEADING
-                conf = 70
             else:
                 fallback_verdict = VerdictEnum.UNVERIFIED
                 conf = 45

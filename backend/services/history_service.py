@@ -72,7 +72,7 @@ class HistoryService:
         total_pages = max(1, math.ceil(total / page_size))
         page = max(1, min(page, total_pages)) if total > 0 else 1
 
-        records = query.order_by(desc(VerificationHistory.created_at))\
+        records = query.order_by(desc(VerificationHistory.created_at), desc(VerificationHistory.id))\
                        .offset((page - 1) * page_size)\
                        .limit(page_size)\
                        .all()

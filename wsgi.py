@@ -7,6 +7,7 @@ Supports ALL Python web interfaces:
 """
 import os
 import sys
+from threading import Lock
 
 # Ensure root workspace directory is in sys.path
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,6 +15,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from backend.main import app as asgi_app
+from backend.db.database import init_db
 
 
 class UniversalApp:
@@ -26,37 +28,16 @@ class UniversalApp:
     def __init__(self, target_asgi_app):
         self.asgi_app = target_asgi_app
         self._wsgi_adapter = None
+        self._wsgi_init_lock = Lock()
 
     def _get_wsgi_adapter(self):
         if self._wsgi_adapter is None:
-            try:
-                from a2wsgi import ASGIMiddleware
-                self._wsgi_adapter = ASGIMiddleware(self.asgi_app)
-            except Exception:
-                from starlette.testclient import TestClient
-                client = TestClient(self.asgi_app, raise_server_exceptions=False)
+            with self._wsgi_init_lock:
+                if self._wsgi_adapter is None:
+                    from a2wsgi import ASGIMiddleware
 
-                def fallback_adapter(environ, start_response):
-                    path = environ.get("PATH_INFO", "/")
-                    query = environ.get("QUERY_STRING", "")
-                    if query:
-                        path = f"{path}?{query}"
-                    method = environ.get("REQUEST_METHOD", "GET")
-                    headers = {}
-                    for k, v in environ.items():
-                        if k.startswith("HTTP_"):
-                            h_name = k[5:].replace("_", "-").title()
-                            headers[h_name] = str(v)
-                    body = environ.get("wsgi.input")
-                    content = body.read() if body else None
-
-                    resp = client.request(method, path, headers=headers, content=content)
-                    status_line = f"{resp.status_code} OK"
-                    resp_headers = [(k, v) for k, v in resp.headers.items()]
-                    start_response(status_line, resp_headers)
-                    return [resp.content]
-
-                self._wsgi_adapter = fallback_adapter
+                    init_db()
+                    self._wsgi_adapter = ASGIMiddleware(self.asgi_app)
         return self._wsgi_adapter
 
     def __call__(self, *args, **kwargs):

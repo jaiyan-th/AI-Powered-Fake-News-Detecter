@@ -3,13 +3,57 @@ Tests for Verification History API Routes: List, Filter, Detail, and Deletion
 """
 
 import uuid
-import pytest
+from unittest.mock import AsyncMock
 from fastapi.testclient import TestClient
+from backend.api.deps import get_verification_pipeline
 from backend.main import app
 from backend.db.database import SessionLocal
 from backend.db.models import User, VerificationHistory
 
 client = TestClient(app)
+
+
+def test_authenticated_verification_is_replayed_from_history(monkeypatch):
+    pipeline = get_verification_pipeline()
+    claim = "The council approved the downtown public library."
+    first_title = "Council approves downtown public library"
+    second_title = "Downtown public library gets council approval"
+    sources = [
+        {"source_name": "Reuters", "url": "https://reuters.com/library", "title": first_title, "content": claim},
+        {"source_name": "BBC", "url": "https://bbc.com/library", "title": second_title, "content": claim},
+    ]
+    monkeypatch.setattr(pipeline.newsapi_service, "search", AsyncMock(return_value=sources))
+    monkeypatch.setattr(pipeline.serpapi_service, "search_google_news", AsyncMock(side_effect=TimeoutError()))
+    embeddings = pipeline.vector_service.embedding_service
+    monkeypatch.setattr(embeddings, "embed_text", lambda text: [1.0, 0.0])
+    monkeypatch.setattr(embeddings, "embed_batch", lambda texts: [[1.0, 0.0] for _ in texts])
+    groq_results = iter([
+        {"primary_claim": claim, "search_queries": ["council library approval"]},
+        {"evaluations": [
+            {"source_id": 1, "stance": "SUPPORT", "evidence_snippet": first_title},
+            {"source_id": 2, "stance": "SUPPORT", "evidence_snippet": second_title},
+        ]},
+        {"verdict": "REAL", "summary": "Both outlets reported council approval."},
+    ])
+    monkeypatch.setattr(pipeline.claim_extractor.groq_service, "generate_json", lambda **kwargs: next(groq_results))
+
+    with TestClient(app) as browser:
+        assert browser.get("/").status_code == 200
+        registration = browser.post("/api/v1/auth/register", json={
+            "email": "replay@example.com", "password": "test-password", "full_name": "Replay Tester",
+        })
+        assert registration.status_code == 201
+        headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
+        verification = browser.post("/api/v1/verify", json={"text": claim}, headers=headers)
+        assert verification.status_code == 200
+        assert verification.json()["verdict"] == "REAL"
+        assert verification.json()["evidence_summary"]["supporting"] == 2
+        assert any("Google News" in limitation for limitation in verification.json()["limitations"])
+        history = browser.get("/api/v1/history", headers=headers).json()
+        assert history["total"] == 1
+        detail = browser.get(f"/api/v1/history/{history['items'][0]['id']}", headers=headers)
+        assert detail.status_code == 200
+        assert detail.json()["sources"] == verification.json()["sources"]
 
 
 def test_history_flow():

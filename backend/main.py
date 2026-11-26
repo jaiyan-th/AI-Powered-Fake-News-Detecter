@@ -29,11 +29,8 @@ logger = logging.getLogger("news_verification.main")
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     # Initialize database tables
-    try:
-        init_db()
-        logger.info("Database tables initialized successfully.")
-    except Exception as e:
-        logger.error(f"Failed to initialize database tables: {e}")
+    init_db()
+    logger.info("Database tables initialized successfully.")
 
     logger.info(f"Groq API Key configured: {bool(settings.GROQ_API_KEY)}")
     logger.info(f"NewsAPI Key configured: {bool(settings.NEWS_API_KEY)}")
