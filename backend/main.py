@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.core.config import settings
 from backend.core.exceptions import NewsVerificationException, news_verification_exception_handler
-from backend.db.database import init_db
+from backend.db import database
 from backend.api.routes.verification import router as verification_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.auth import router as auth_router
@@ -29,15 +29,18 @@ logger = logging.getLogger("news_verification.main")
 async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     # Initialize database tables
-    init_db()
+    database.init_db()
     logger.info("Database tables initialized successfully.")
 
     logger.info(f"Groq API Key configured: {bool(settings.GROQ_API_KEY)}")
     logger.info(f"NewsAPI Key configured: {bool(settings.NEWS_API_KEY)}")
     logger.info(f"SerpAPI Key configured: {bool(settings.SERPAPI_KEY)}")
     logger.info(f"Semantic Vector Search: FastEmbed ({settings.EMBEDDING_MODEL})")
-    yield
-    logger.info(f"Shutting down {settings.APP_NAME}")
+    try:
+        yield
+    finally:
+        database.engine.dispose()
+        logger.info(f"Shutting down {settings.APP_NAME}")
 
 
 # Initialize FastAPI Application
@@ -55,14 +58,14 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The bundled frontend is served from the same origin.
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 # Register Custom Exception Handlers
 app.add_exception_handler(NewsVerificationException, news_verification_exception_handler)

@@ -5,16 +5,16 @@ Thank you for your interest in contributing to our AI-powered fake news detectio
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.12
 - Git
-- Basic knowledge of Flask, NLP, or machine learning
+- Basic knowledge of FastAPI or browser JavaScript
 
 ### Development Setup
 
 1. **Fork the repository**
    ```bash
-   git clone https://github.com/yourusername/fake-news-detector.git
-   cd fake-news-detector
+   git clone https://github.com/<your-username>/AI-Powered-Fake-News-Detecter.git
+   cd AI-Powered-Fake-News-Detecter
    ```
 
 2. **Create a virtual environment**
@@ -25,8 +25,7 @@ Thank you for your interest in contributing to our AI-powered fake news detectio
 
 3. **Install dependencies**
    ```bash
-   cd fake-news-detector
-   pip install -r requirements.txt
+   python -m pip install -r requirements-dev.txt
    ```
 
 4. **Set up environment variables**
@@ -37,7 +36,7 @@ Thank you for your interest in contributing to our AI-powered fake news detectio
 
 5. **Run tests**
    ```bash
-   python -m pytest tests/
+   python -m pytest backend/tests/
    ```
 
 ## 🛠️ How to Contribute
@@ -61,8 +60,7 @@ Thank you for your interest in contributing to our AI-powered fake news detectio
 
 3. **Test your changes**
    ```bash
-   python -m pytest tests/
-   python test_rag_pipeline.py  # For RAG pipeline changes
+   python -m pytest backend/tests/
    ```
 
 4. **Commit your changes**
@@ -111,11 +109,10 @@ Thank you for your interest in contributing to our AI-powered fake news detectio
 
 ### Example Test Structure
 ```python
-def test_analyze_text_real_news():
-    """Test that real news is correctly identified."""
-    result = pipeline.analyze_text("Legitimate news content...")
-    assert result['verdict'] == 'REAL'
-    assert float(result['confidence'].rstrip('%')) > 70
+def test_verify_rejects_blank_claim(client):
+    """Check that a blank claim is rejected."""
+    result = client.post("/api/v1/verify", json={"text": ""})
+    assert result.status_code == 422
 ```
 
 ## 🎯 Areas for Contribution

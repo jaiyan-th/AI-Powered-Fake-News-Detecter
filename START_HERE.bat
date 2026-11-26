@@ -52,7 +52,7 @@ goto menu
 :install
 echo.
 echo Installing Python dependencies...
-"%PYTHON_EXE%" -m pip install -r requirements.txt
+"%PYTHON_EXE%" -m pip install -r requirements-dev.txt
 if errorlevel 1 goto install_failed
 echo.
 echo Done!

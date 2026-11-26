@@ -33,13 +33,12 @@ wheels/
 *.db
 *.sqlite
 *.sqlite3
-fake-news-detector/database/*.db
-database/*.db
+*.db-*
+database/
 
 # Logs
 *.log
 logs/
-fake-news-detector/logs/*.log
 
 # IDE
 .vscode/

@@ -3,18 +3,24 @@ Health Check and Diagnostics Route Handler: GET /api/v1/health
 """
 
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends
+import logging
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 from backend.schemas.health import HealthResponse
 from backend.core.config import settings
+from backend.db.models import User, VerificationHistory
 from backend.services.groq_service import GroqService
 from backend.services.newsapi_service import NewsAPIService
 from backend.services.serpapi_service import SerpAPIService
 from backend.services.vector_service import VectorSearchService
 from backend.api.deps import (
-    get_groq_service, get_newsapi_service, get_serpapi_service, get_vector_service
+    get_db, get_groq_service, get_newsapi_service, get_serpapi_service, get_vector_service
 )
 
-router = APIRouter(prefix="/api/v1", tags=["Health & Diagnostics"])
+router = APIRouter(prefix="/api/v1", tags=["Health"])
+logger = logging.getLogger(__name__)
 
 
 @router.get(
@@ -23,7 +29,9 @@ router = APIRouter(prefix="/api/v1", tags=["Health & Diagnostics"])
     summary="System Health and Diagnostics",
     description="Returns status of the FastAPI backend application and its core services (Groq, NewsAPI, SerpAPI, Vector Search Engine)."
 )
-async def check_system_health(
+def check_system_health(
+    response: Response,
+    db: Session = Depends(get_db),
     groq_service: GroqService = Depends(get_groq_service),
     newsapi_service: NewsAPIService = Depends(get_newsapi_service),
     serpapi_service: SerpAPIService = Depends(get_serpapi_service),
@@ -34,11 +42,21 @@ async def check_system_health(
     serpapi_ok = serpapi_service.is_configured()
     vector_ok = vector_service.is_available()
 
-    overall_status = "healthy"
-    if not groq_ok or not vector_ok:
-        overall_status = "degraded"
+    try:
+        db.execute(select(User.id).limit(1)).first()
+        db.execute(select(VerificationHistory.id).limit(1)).first()
+        database_ok = True
+    except SQLAlchemyError:
+        logger.exception("Database health check failed")
+        database_ok = False
+        response.status_code = 503
+
+    overall_status = "healthy" if groq_ok and vector_ok else "degraded"
+    if not database_ok:
+        overall_status = "unavailable"
 
     dependencies = {
+        "database": {"status": "operational" if database_ok else "unavailable"},
         "groq_llm": {
             "status": "operational" if groq_ok else "unconfigured_or_unavailable",
             "role": "Claim extraction, query generation, stance analysis, verdict synthesis"
@@ -68,38 +86,3 @@ async def check_system_health(
         dependencies=dependencies,
         timestamp=datetime.now(timezone.utc).isoformat()
     )
-
-
-@router.get("/health/test-search", summary="Search Diagnostics")
-async def test_search_diagnostics(
-    q: str = "Vijay",
-    newsapi_service: NewsAPIService = Depends(get_newsapi_service),
-    serpapi_service: SerpAPIService = Depends(get_serpapi_service)
-):
-    import httpx, xml.etree.ElementTree as ET
-    # Test Google News RSS directly
-    rss_status = "unknown"
-    rss_items_count = 0
-    rss_error = None
-    try:
-        async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
-            r = await client.get(
-                "https://news.google.com/rss/search",
-                params={"q": q, "hl": "en-IN", "gl": "IN", "ceid": "IN:en"},
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            rss_status = r.status_code
-            if r.status_code == 200:
-                root = ET.fromstring(r.content)
-                rss_items_count = len(root.findall(".//item"))
-    except Exception as e:
-        rss_error = str(e)
-
-    news_res = await newsapi_service.search([q])
-    serp_res = await serpapi_service.search_google_news([q])
-    return {
-        "query": q,
-        "direct_rss": {"status": rss_status, "count": rss_items_count, "error": rss_error},
-        "newsapi": {"configured": newsapi_service.is_configured(), "count": len(news_res), "sample": [a["title"] for a in news_res[:2]]},
-        "serpapi": {"configured": bool(serpapi_service.api_key), "count": len(serp_res), "sample": [a["title"] for a in serp_res[:2]]}
-    }

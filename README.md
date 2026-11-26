@@ -1,9 +1,9 @@
 # 🔍 AI News Verification System
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
 [![Vector RAG](https://img.shields.io/badge/Vector_RAG-FastEmbed-818cf8.svg)](https://github.com/qdrant/fastembed)
-[![Groq](https://img.shields.io/badge/Groq-Llama_3.1_Inference-f97316.svg)](https://groq.com)
+[![Groq](https://img.shields.io/badge/Groq-LLM_Inference-f97316.svg)](https://groq.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An **LLM + RAG-based evidence verification system** that verifies news URLs and viral text claims against real-time reporting from global and regional news sources without relying on a traditional supervised fake-news classifier.
@@ -42,11 +42,11 @@ USER INPUT (URL or Text)
        ▼
  Groq LLM — Search Query Generation (3-5 targeted queries)
        │
-       ├─────────────────────────┬─────────────────────────┐
-       ▼                         ▼                         ▼
-   NewsAPI Search         SerpAPI Google News        Fallback Store
-       │                         │                         │
-       └─────────────────────────┼─────────────────────────┘
+       ├─────────────────────────┐
+       ▼                         ▼
+   NewsAPI Search         Google News (SerpAPI or RSS)
+       │                         │
+       └─────────────────────────┤
                                  ▼
                      Source Normalization & Wire Deduplication
                                  ▼
@@ -81,18 +81,18 @@ USER INPUT (URL or Text)
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
-- Python 3.10+
+- Python 3.12
 - Free [Groq API Key](https://console.groq.com)
 - Free [NewsAPI Key](https://newsapi.org)
 - (Optional) [SerpAPI Key](https://serpapi.com)
 
 ### 2. Installation
 ```bash
-git clone https://github.com/jaiyan-th/Fake-News-Detecter.git
-cd Fake-News-Detecter
+git clone https://github.com/jaiyan-th/AI-Powered-Fake-News-Detecter.git
+cd AI-Powered-Fake-News-Detecter
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ### 3. Environment Configuration
@@ -109,14 +109,30 @@ SERPAPI_KEY=your-serpapi-key-optional
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Set a shared, private `JWT_SECRET_KEY` when deploying multiple workers or keeping
-account sessions valid across server restarts. Without one, the server generates
-a signing key at startup. See `.env.example`.
+The Windows launcher is `START_HERE.bat`. On port conflicts, start Uvicorn with an available `--port`.
 
 Open your browser at:
 - **Interactive UI:** [http://localhost:8000](http://localhost:8000)
 - **Swagger / OpenAPI Documentation:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **System Health Diagnostics:** [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+
+## Production deployment
+
+VerifyNews serves the UI and API from the same FastAPI process. Run a single instance with one worker and a writable, persistent SQLite directory.
+
+- Set `PRODUCTION=true` and keep `DEBUG=false`. Configure a stable `JWT_SECRET_KEY` generated with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Rotating that key signs users out.
+- Set `GROQ_API_KEY` for claim and evidence analysis. Configure NewsAPI or SerpAPI keys if you use those providers.
+- Put public deployments behind HTTPS and rate-limit verification and authentication requests at the proxy. The provided start commands also cap concurrent connections.
+- Use `GET /api/v1/health` as the health check. A database failure returns HTTP 503. Provider configuration problems appear as degraded service information.
+- The default frontend is same-origin. Set `CORS_ORIGINS` to a JSON list of permitted origins if you host a separate frontend.
+
+### Docker Compose
+
+Set the signing key and provider keys in `.env`, then run `docker compose up --build -d`. Compose binds to loopback for use behind a reverse proxy. It preserves SQLite data in the existing `./database` directory. On Linux, ensure the bind directory and any existing SQLite files are writable by container UID/GID `10001` before starting. Back up the database before changing storage or redeploying.
+
+### Render
+
+Use `render.yaml` for the build command, Uvicorn start command, and health check. For an existing manually configured service, use the same commands and set the environment values in the Render dashboard before deploying. To retain accounts and history across deploys, attach a persistent disk on a compatible plan, set `DATABASE_DIR` to its mount path, and restore any existing SQLite backup there before switching over. See [Render persistent disks](https://render.com/docs/disks).
 
 ---
 
@@ -184,6 +200,7 @@ Verify a news URL or text claim.
 
 ## 🧪 Running Tests
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest backend/tests/ -v
 ```
 

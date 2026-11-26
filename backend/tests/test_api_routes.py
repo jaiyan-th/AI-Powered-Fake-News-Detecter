@@ -2,31 +2,41 @@
 Tests for API Routes & Input Validation
 """
 
-from io import BytesIO
-from wsgiref.util import setup_testing_defaults
-
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy import create_engine
+from backend.api.deps import get_db
+from backend.core.config import Settings
 from backend.main import app
 
 client = TestClient(app)
 
 
-def test_wsgi_health_endpoint():
-    from wsgi import UniversalApp
+def test_health_returns_503_when_database_schema_is_unavailable(monkeypatch):
+    from sqlalchemy.orm import Session
 
-    environ = {"PATH_INFO": "/api/v1/health", "wsgi.input": BytesIO()}
-    setup_testing_defaults(environ)
-    statuses = []
+    engine = create_engine("sqlite://")
 
-    def start_response(status, headers, exc_info=None):
-        if exc_info:
-            raise exc_info[1].with_traceback(exc_info[2])
-        statuses.append(status)
+    def unavailable_database():
+        with Session(engine) as session:
+            yield session
 
-    body = b"".join(UniversalApp(app)(environ, start_response))
-    assert statuses == ["200 OK"]
-    assert b'"application":"running"' in body
+    monkeypatch.setitem(app.dependency_overrides, get_db, unavailable_database)
+    try:
+        response = client.get("/api/v1/health")
+        assert response.status_code == 503
+        assert response.json()["dependencies"]["database"]["status"] == "unavailable"
+    finally:
+        engine.dispose()
+
+
+def test_production_requires_persistent_signing_secret(monkeypatch):
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    with pytest.raises(ValidationError, match="explicit JWT_SECRET_KEY"):
+        Settings(_env_file=None, PRODUCTION=True)
+    settings = Settings(_env_file=None, PRODUCTION=True, JWT_SECRET_KEY="test-key-" * 5)
+    assert settings.PRODUCTION
 
 
 def test_health_endpoint():
@@ -36,6 +46,7 @@ def test_health_endpoint():
     data = response.json()
     assert data["application"] == "running"
     assert "dependencies" in data
+    assert data["dependencies"]["database"]["status"] == "operational"
     assert "groq_llm" in data["dependencies"]
     assert "news_api" in data["dependencies"]
     assert "vector_search_engine" in data["dependencies"]
